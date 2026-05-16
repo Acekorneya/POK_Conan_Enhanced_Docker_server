@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+require_uint PUID "${PUID:-1000}"
+require_uint PGID "${PGID:-1000}"
+
+export PUID="${PUID:-1000}"
+export PGID="${PGID:-1000}"
+export SERVER_DIR="${SERVER_DIR:-/data/server}"
+export STEAM_DIR="${STEAM_DIR:-/data/steam}"
+export BACKUP_DIR="${BACKUP_DIR:-/data/backups}"
+
+existing_group="$(getent group "$PGID" | cut -d: -f1 || true)"
+if [[ -n "$existing_group" && "$existing_group" != "pokuser" ]]; then
+  primary_group="$PGID"
+elif ! getent group pokuser >/dev/null; then
+  groupadd --gid "$PGID" pokuser
+  primary_group="$PGID"
+else
+  groupmod --gid "$PGID" pokuser
+  primary_group="$PGID"
+fi
+
+if ! id pokuser >/dev/null 2>&1; then
+  useradd --create-home --shell /bin/bash --uid "$PUID" --gid "$primary_group" pokuser
+else
+  usermod --uid "$PUID" --gid "$primary_group" --home /home/pokuser pokuser
+fi
+
+mkdir -p "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" /home/pokuser
+chown -R "$PUID:$PGID" "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" /home/pokuser
+
+export HOME=/home/pokuser
+cd "$SERVER_DIR"
+
+exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups /usr/local/bin/server-command.sh "$@"

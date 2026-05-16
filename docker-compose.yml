@@ -1,0 +1,24 @@
+services:
+  conan:
+    build: .
+    image: conan-exiles-enhanced-server:latest
+    container_name: conan-exiles-enhanced
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "${SERVER_PORT:-7777}:${SERVER_PORT:-7777}/udp"
+      - "${RAW_UDP_PORT:-7778}:${RAW_UDP_PORT:-7778}/udp"
+      - "${QUERY_PORT:-27015}:${QUERY_PORT:-27015}/udp"
+    volumes:
+      - ./data/server:/data/server
+      - ./data/steam:/data/steam
+      - ./data/backups:/data/backups
+    stop_grace_period: 2m
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      start_period: 10m
+      interval: 30s
+      timeout: 10s
+      retries: 3

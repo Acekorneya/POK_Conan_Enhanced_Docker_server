@@ -1,0 +1,139 @@
+# Conan Exiles Enhanced Dedicated Server for Linux
+
+Docker project for the native Linux Conan Exiles Enhanced dedicated server. It installs Steam app `443030`, uses the Linux depot, keeps all mutable data on host volumes, runs the game as `pokuser`, supports RCON health checks, installs ordered Workshop mods, and creates automatic backups.
+
+## Quick Start
+
+```bash
+cp .env.example .env
+edit .env
+docker compose up -d --build
+```
+
+Required settings before first start:
+
+```env
+ADMIN_PASSWORD=change-me
+RCON_PASSWORD=change-me-rcon
+```
+
+The first boot downloads the server, so it can take a while.
+
+## Volumes
+
+```text
+./data/server   Steam server install, Conan saves, configs, and mods
+./data/steam    SteamCMD cache and Workshop downloads
+./data/backups  Backup archives
+```
+
+These paths are bind-mounted so restarts, rebuilds, and container replacement keep the server state.
+
+## Ports
+
+Default published ports:
+
+```text
+7777/udp   Game
+7778/udp   Raw UDP peer port
+27015/udp  Steam query
+```
+
+RCON is enabled inside the container for health checks and shutdown saves, but it is not published to the host by default. To expose it:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.rcon.yml up -d
+```
+
+## User and Permissions
+
+Set `PUID` and `PGID` in `.env` to match the host account that should own files under `./data`.
+
+The image default user is `pokuser`, so interactive shells are non-root:
+
+```bash
+docker compose exec conan bash
+id
+```
+
+Startup uses a narrow sudo helper to update `pokuser` to the configured UID/GID and chown mounted volumes before the server process starts.
+
+## Updates
+
+`AUTO_UPDATE=true` runs SteamCMD update on container start. Set it to `false` to skip updates when server files already exist.
+
+Manual update:
+
+```bash
+docker compose run --rm conan update
+```
+
+## Mods
+
+Set ordered Workshop IDs in `.env`:
+
+```env
+MOD_IDS=123456789,987654321
+```
+
+On start, each item is downloaded with SteamCMD, its `.pak` plus matching `.ucas/.utoc` files are copied into `ConanSandbox/Mods`, and `modlist.txt` is generated in the same order.
+
+## Backups
+
+Backups run every `BACKUP_INTERVAL_MINUTES` and again during graceful shutdown when `BACKUP_ON_STOP=true`.
+
+Each archive includes:
+
+- save databases from `ConanSandbox/Saved`
+- Linux server config INI files
+- `Mods/modlist.txt`
+- metadata
+
+Retention is controlled with `BACKUP_RETENTION_COUNT`.
+
+Manual backup:
+
+```bash
+docker compose run --rm conan backup
+```
+
+## Graceful Shutdown
+
+On `docker compose stop`, restart, or a normal TERM/INT signal, the container:
+
+1. sends an optional RCON broadcast
+2. runs Conan RCON `save`
+3. waits for save-file timestamp activity
+4. creates a final backup
+5. terminates the server process
+
+A raw `SIGKILL` cannot be trapped by Docker or the game, so scheduled backups are still important.
+
+## RCON
+
+Run RCON commands from inside the container:
+
+```bash
+docker compose exec conan rcon listplayers
+docker compose exec conan rcon save
+```
+
+## Tests
+
+Run shell tests with Bats:
+
+```bash
+tests/run_tests.sh
+```
+
+Useful static checks:
+
+```bash
+docker compose config
+shellcheck scripts/*.sh scripts/entrypoint scripts/root-entrypoint
+```
+
+## Notes
+
+This project targets Conan Exiles Enhanced native Linux server files. Legacy Wine/Xvfb server setups are intentionally out of scope.
+
