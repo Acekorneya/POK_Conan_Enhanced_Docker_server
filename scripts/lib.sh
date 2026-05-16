@@ -38,6 +38,20 @@ reject_placeholder() {
   done
 }
 
+require_choice() {
+  local name="$1"
+  local value="$2"
+  shift 2
+  local choice
+  for choice in "$@"; do
+    if [[ "$value" == "$choice" ]]; then
+      return 0
+    fi
+  done
+  echo "$name must be one of: $*" >&2
+  return 1
+}
+
 csv_words() {
   printf '%s\n' "${1:-}" | tr ',;' '  ' | xargs -n1 2>/dev/null || true
 }

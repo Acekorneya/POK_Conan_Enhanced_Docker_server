@@ -17,6 +17,9 @@ setup() {
   grep -q '^RconEnabled=True$' "$cfg/Game.ini"
   grep -q '^RconPassword=rcon$' "$cfg/Game.ini"
   grep -q '^AdminPassword=admin$' "$cfg/ServerSettings.ini"
+  grep -q '^ServerCommunity=0$' "$cfg/ServerSettings.ini"
+  grep -q '^serverRegion=0$' "$cfg/ServerSettings.ini"
+  grep -q '^serverVoiceChat=0$' "$cfg/ServerSettings.ini"
 }
 
 @test "configure-server requires admin password" {
@@ -32,4 +35,11 @@ setup() {
   run scripts/configure-server.sh
   [ "$status" -ne 0 ]
   [[ "$output" == *"ADMIN_PASSWORD must be changed"* ]]
+}
+
+@test "configure-server rejects invalid community value" {
+  export COMMUNITY=10
+  run scripts/configure-server.sh
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"COMMUNITY must be one of: 0 1 2 3 4"* ]]
 }

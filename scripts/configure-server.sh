@@ -11,6 +11,9 @@ if truthy "${RCON_ENABLED:-true}"; then
   require_nonempty RCON_PASSWORD "${RCON_PASSWORD:-}"
   reject_placeholder RCON_PASSWORD "${RCON_PASSWORD:-}" change-me-rcon rcon password
 fi
+require_choice COMMUNITY "${COMMUNITY:-0}" 0 1 2 3 4
+require_choice SERVER_REGION "${SERVER_REGION:-0}" 0 1 2 3 4 5
+require_choice SERVER_VOICE_CHAT "${SERVER_VOICE_CHAT:-0}" 0 1
 
 config_dir="$(server_config_dir)"
 mkdir -p "$config_dir"
@@ -33,9 +36,9 @@ ini_set "$settings_ini" "ServerSettings" "AdminPassword" "${ADMIN_PASSWORD:-}"
 ini_set "$settings_ini" "ServerSettings" "ServerPassword" "${SERVER_PASSWORD:-}"
 ini_set "$settings_ini" "ServerSettings" "MaxPlayers" "${MAX_PLAYERS:-40}"
 ini_set "$settings_ini" "ServerSettings" "PVPEnabled" "${PVP_ENABLED:-true}"
-ini_set "$settings_ini" "ServerSettings" "Community" "${COMMUNITY:-0}"
-ini_set "$settings_ini" "ServerSettings" "Region" "${SERVER_REGION:-0}"
-ini_set "$settings_ini" "ServerSettings" "VoiceChat" "${SERVER_VOICE_CHAT:-0}"
+ini_set "$settings_ini" "ServerSettings" "ServerCommunity" "${COMMUNITY:-0}"
+ini_set "$settings_ini" "ServerSettings" "serverRegion" "${SERVER_REGION:-0}"
+ini_set "$settings_ini" "ServerSettings" "serverVoiceChat" "${SERVER_VOICE_CHAT:-0}"
 ini_set "$settings_ini" "ServerSettings" "BattlEyeEnabled" "${ENABLE_BATTLEYE:-true}"
 ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}"
 ini_set "$settings_ini" "ServerSettings" "clanMaxSize" "${CLAN_MAX_SIZE:-10}"
