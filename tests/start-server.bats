@@ -70,3 +70,57 @@ SH
   [ "$status" -eq 0 ]
   [[ "$output" == *"Server watchdog health check failed (1/1)"* ]]
 }
+
+@test "scheduled broadcasts stay disabled when message is blank" {
+  run bash -c '
+    set -euo pipefail
+    export SERVER_BROADCAST_MESSAGE=
+    source scripts/start-server.sh
+    start_scheduled_broadcasts
+    test -z "$broadcast_pid"
+  '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Scheduled broadcasts disabled because SERVER_BROADCAST_MESSAGE is blank"* ]]
+}
+
+@test "scheduled broadcasts reject invalid interval" {
+  run bash -c '
+    set -euo pipefail
+    export SERVER_BROADCAST_MESSAGE="Join Discord"
+    export SERVER_BROADCAST_INTERVAL_MINUTES=abc
+    export RCON_ENABLED=true
+    export RCON_PASSWORD=secret
+    source scripts/start-server.sh
+    start_scheduled_broadcasts
+  '
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"SERVER_BROADCAST_INTERVAL_MINUTES must be an unsigned integer"* ]]
+}
+
+@test "scheduled broadcasts send configured message" {
+  fake_rcon="$BATS_TEST_TMPDIR/rcon-wrapper"
+  rcon_log="$BATS_TEST_TMPDIR/broadcast.log"
+  cat > "$fake_rcon" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_RCON_LOG"
+SH
+  chmod +x "$fake_rcon"
+
+  run timeout 3 bash -c '
+    set -euo pipefail
+    export RCON_WRAPPER="$1"
+    export FAKE_RCON_LOG="$2"
+    export RCON_ENABLED=true
+    export RCON_PASSWORD=secret
+    export SERVER_BROADCAST_MESSAGE="Join Discord"
+    export SERVER_BROADCAST_INTERVAL_MINUTES=120
+    source scripts/start-server.sh
+    run_scheduled_broadcasts 1
+  ' bash "$fake_rcon" "$rcon_log"
+
+  [ "$status" -eq 124 ]
+  grep -q '^broadcast Join Discord$' "$rcon_log"
+}

@@ -13,6 +13,7 @@ server_pid=""
 backup_pid=""
 update_pid=""
 watchdog_pid=""
+broadcast_pid=""
 update_request_file="${TMPDIR:-/tmp}/conan-update-request.$$"
 update_active_file="${TMPDIR:-/tmp}/conan-update-active.$$"
 watchdog_request_file="${TMPDIR:-/tmp}/conan-watchdog-request.$$"
@@ -128,6 +129,49 @@ stop_periodic_backups() {
     kill "$backup_pid" 2>/dev/null || true
     wait "$backup_pid" 2>/dev/null || true
     backup_pid=""
+  fi
+}
+
+run_scheduled_broadcasts() {
+  local message="${SERVER_BROADCAST_MESSAGE:-}"
+  local interval_minutes="${SERVER_BROADCAST_INTERVAL_MINUTES:-120}"
+  local interval_seconds="${1:-}"
+
+  [[ -n "$message" ]] || return 0
+  require_positive_uint SERVER_BROADCAST_INTERVAL_MINUTES "$interval_minutes" || return 1
+  if [[ -z "$interval_seconds" ]]; then
+    interval_seconds=$(( interval_minutes * 60 ))
+  else
+    require_positive_uint SERVER_BROADCAST_INTERVAL_SECONDS "$interval_seconds" || return 1
+  fi
+
+  log_info "Scheduled broadcasts enabled: every ${interval_minutes} minute(s)"
+  while true; do
+    sleep "$interval_seconds"
+    rcon_broadcast "$message"
+  done
+}
+
+start_scheduled_broadcasts() {
+  if [[ -z "${SERVER_BROADCAST_MESSAGE:-}" ]]; then
+    log_info "Scheduled broadcasts disabled because SERVER_BROADCAST_MESSAGE is blank"
+    return 0
+  fi
+  if ! truthy "${RCON_ENABLED:-true}" || [[ -z "${RCON_PASSWORD:-}" ]]; then
+    log_warn "Scheduled broadcasts disabled because RCON is disabled or RCON_PASSWORD is not set"
+    return 0
+  fi
+
+  require_positive_uint SERVER_BROADCAST_INTERVAL_MINUTES "${SERVER_BROADCAST_INTERVAL_MINUTES:-120}" || return 1
+  run_scheduled_broadcasts "" &
+  broadcast_pid="$!"
+}
+
+stop_scheduled_broadcasts() {
+  if [[ -n "$broadcast_pid" ]]; then
+    kill "$broadcast_pid" 2>/dev/null || true
+    wait "$broadcast_pid" 2>/dev/null || true
+    broadcast_pid=""
   fi
 }
 
@@ -395,6 +439,7 @@ stop_watchdog_monitor() {
 }
 
 cleanup_runtime() {
+  stop_scheduled_broadcasts
   stop_watchdog_monitor
   stop_update_monitor
   stop_periodic_backups
@@ -407,6 +452,7 @@ handle_signal() {
   fi
   shutdown_requested=true
   log_info "Received stop signal"
+  stop_scheduled_broadcasts
   stop_watchdog_monitor
   stop_update_monitor
   graceful_stop_server stop "Server shutting down, saving world."
@@ -433,12 +479,16 @@ main() {
       verify_after_launch=false
     fi
 
+    start_scheduled_broadcasts
     start_update_monitor
     start_watchdog_monitor
     watchdog_extra_grace_seconds=0
     restart_requested=false
     restart_reason=""
     while server_running "$server_pid"; do
+      if [[ -f "$update_active_file" && -n "$broadcast_pid" ]]; then
+        stop_scheduled_broadcasts
+      fi
       if [[ -f "$update_request_file" ]]; then
         restart_requested=true
         restart_reason="update"
@@ -453,6 +503,7 @@ main() {
     done
 
     if [[ "$restart_requested" == true ]]; then
+      stop_scheduled_broadcasts
       stop_watchdog_monitor
       stop_update_monitor
       if [[ "$restart_reason" == "watchdog" ]]; then

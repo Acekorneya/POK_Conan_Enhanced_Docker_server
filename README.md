@@ -189,6 +189,17 @@ docker compose exec conan rcon help
 docker compose exec conan rcon listplayers
 ```
 
+## Scheduled Broadcasts
+
+Set an optional repeating message in `.env` to promote Discord or send any recurring admin notice:
+
+```env
+SERVER_BROADCAST_MESSAGE=Join our Discord: https://discord.gg/example
+SERVER_BROADCAST_INTERVAL_MINUTES=120
+```
+
+Leave `SERVER_BROADCAST_MESSAGE` blank to disable scheduled broadcasts. The first message is sent after one full interval, then repeats on the same interval.
+
 ## Tests
 
 Run shell tests with Bats:
