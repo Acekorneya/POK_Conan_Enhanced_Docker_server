@@ -124,3 +124,154 @@ SH
   [ "$status" -eq 124 ]
   grep -q '^broadcast Join Discord$' "$rcon_log"
 }
+
+@test "raid due broadcasts include start warnings and start notice" {
+  run bash -c '
+    set -euo pipefail
+    export TZ=America/Los_Angeles
+    export PVP_BUILDING_DAMAGE_DAYS=weekends
+    export PVP_BUILDING_DAMAGE_START=18:00
+    export PVP_BUILDING_DAMAGE_END=22:00
+    source scripts/start-server.sh
+    from="$(TZ="$TZ" date -d "2026-05-16 16:59:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 17:00:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+    from="$(TZ="$TZ" date -d "2026-05-16 17:29:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 17:30:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+    from="$(TZ="$TZ" date -d "2026-05-16 17:54:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 17:55:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+    from="$(TZ="$TZ" date -d "2026-05-16 17:59:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 18:00:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+  '
+
+  [ "$status" -eq 0 ]
+  [ "$output" = $'Raid time starts in 1 hour.\nRaid time starts in 30 minutes.\nRaid time starts in 5 minutes.\nRaid time has started.' ]
+}
+
+@test "raid due broadcasts include end warnings and end notice" {
+  run bash -c '
+    set -euo pipefail
+    export TZ=America/Los_Angeles
+    export PVP_BUILDING_DAMAGE_DAYS=weekends
+    export PVP_BUILDING_DAMAGE_START=18:00
+    export PVP_BUILDING_DAMAGE_END=22:00
+    source scripts/start-server.sh
+    for window in \
+      "2026-05-16 20:59:50|2026-05-16 21:00:10" \
+      "2026-05-16 21:29:50|2026-05-16 21:30:10" \
+      "2026-05-16 21:54:50|2026-05-16 21:55:10" \
+      "2026-05-16 21:59:50|2026-05-16 22:00:10"; do
+      from_raw="${window%%|*}"
+      to_raw="${window#*|}"
+      from="$(TZ="$TZ" date -d "$from_raw" +%s)"
+      to="$(TZ="$TZ" date -d "$to_raw" +%s)"
+      raid_due_broadcasts "$from" "$to"
+    done
+  '
+
+  [ "$status" -eq 0 ]
+  [ "$output" = $'Raid time ends in 1 hour.\nRaid time ends in 30 minutes.\nRaid time ends in 5 minutes.\nRaid time has ended.' ]
+}
+
+@test "raid end warnings before short window starts are skipped" {
+  run bash -c '
+    set -euo pipefail
+    export TZ=America/Los_Angeles
+    export PVP_BUILDING_DAMAGE_DAYS=Saturday
+    export PVP_BUILDING_DAMAGE_START=18:00
+    export PVP_BUILDING_DAMAGE_END=18:20
+    source scripts/start-server.sh
+    from="$(TZ="$TZ" date -d "2026-05-16 17:19:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 17:20:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+  '
+
+  [ "$status" -eq 0 ]
+  [ "$output" = "" ]
+}
+
+@test "raid due broadcasts handle overnight windows" {
+  run bash -c '
+    set -euo pipefail
+    export TZ=America/Los_Angeles
+    export PVP_BUILDING_DAMAGE_DAYS=Saturday
+    export PVP_BUILDING_DAMAGE_START=23:00
+    export PVP_BUILDING_DAMAGE_END=00:30
+    source scripts/start-server.sh
+    from="$(TZ="$TZ" date -d "2026-05-16 22:29:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 22:30:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+    from="$(TZ="$TZ" date -d "2026-05-16 23:29:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 23:30:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+    from="$(TZ="$TZ" date -d "2026-05-17 00:29:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-17 00:30:10" +%s)"
+    raid_due_broadcasts "$from" "$to"
+  '
+
+  [ "$status" -eq 0 ]
+  [ "$output" = $'Raid time starts in 30 minutes.\nRaid time ends in 1 hour.\nRaid time has ended.' ]
+}
+
+@test "raid broadcasts stay disabled when schedule is blank" {
+  run bash -c '
+    set -euo pipefail
+    export RAID_BROADCASTS_ENABLED=true
+    export PVP_BUILDING_DAMAGE_DAYS=
+    export PVP_BUILDING_DAMAGE_START=
+    export PVP_BUILDING_DAMAGE_END=
+    source scripts/start-server.sh
+    start_raid_broadcasts
+    test -z "$raid_broadcast_pid"
+  '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Raid broadcasts disabled because PVP_BUILDING_DAMAGE schedule is blank"* ]]
+}
+
+@test "raid broadcasts can be disabled explicitly" {
+  run bash -c '
+    set -euo pipefail
+    export RAID_BROADCASTS_ENABLED=false
+    export PVP_BUILDING_DAMAGE_DAYS=weekends
+    export PVP_BUILDING_DAMAGE_START=18:00
+    export PVP_BUILDING_DAMAGE_END=22:00
+    source scripts/start-server.sh
+    start_raid_broadcasts
+    test -z "$raid_broadcast_pid"
+  '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Raid broadcasts disabled because RAID_BROADCASTS_ENABLED=false"* ]]
+}
+
+@test "raid due broadcast sends expected rcon message" {
+  fake_rcon="$BATS_TEST_TMPDIR/rcon-wrapper"
+  rcon_log="$BATS_TEST_TMPDIR/raid-broadcast.log"
+  cat > "$fake_rcon" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_RCON_LOG"
+SH
+  chmod +x "$fake_rcon"
+
+  run bash -c '
+    set -euo pipefail
+    export RCON_WRAPPER="$1"
+    export FAKE_RCON_LOG="$2"
+    export TZ=America/Los_Angeles
+    export PVP_BUILDING_DAMAGE_DAYS=weekends
+    export PVP_BUILDING_DAMAGE_START=18:00
+    export PVP_BUILDING_DAMAGE_END=22:00
+    source scripts/start-server.sh
+    from="$(TZ="$TZ" date -d "2026-05-16 17:59:50" +%s)"
+    to="$(TZ="$TZ" date -d "2026-05-16 18:00:10" +%s)"
+    broadcast_due_raid_events "$from" "$to"
+  ' bash "$fake_rcon" "$rcon_log"
+
+  [ "$status" -eq 0 ]
+  grep -q '^broadcast Raid time has started\.$' "$rcon_log"
+}
