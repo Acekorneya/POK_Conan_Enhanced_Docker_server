@@ -31,6 +31,7 @@ RUN dpkg --add-architecture i386 \
     && mkdir -p /opt/steamcmd /data/server /data/steam /data/backups \
     && curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
         | tar -xz -C /opt/steamcmd \
+    && chmod +x /opt/steamcmd/steamcmd.sh \
     && chown -R pokuser:pokuser /data /home/pokuser /opt/steamcmd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

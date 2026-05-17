@@ -21,14 +21,21 @@ elif ! getent group pokuser >/dev/null; then
   groupadd --gid "$PGID" pokuser
   primary_group="$PGID"
 else
-  groupmod --gid "$PGID" pokuser
+  current_gid="$(getent group pokuser | cut -d: -f3)"
+  if [[ "$current_gid" != "$PGID" ]]; then
+    groupmod --gid "$PGID" pokuser
+  fi
   primary_group="$PGID"
 fi
 
 if ! id pokuser >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash --uid "$PUID" --gid "$primary_group" pokuser
 else
-  usermod --uid "$PUID" --gid "$primary_group" --home /home/pokuser pokuser
+  current_uid="$(id -u pokuser)"
+  current_primary_gid="$(id -g pokuser)"
+  if [[ "$current_uid" != "$PUID" || "$current_primary_gid" != "$primary_group" ]]; then
+    usermod --uid "$PUID" --gid "$primary_group" --home /home/pokuser pokuser
+  fi
 fi
 
 mkdir -p "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" /home/pokuser
