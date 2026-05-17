@@ -1,0 +1,5 @@
+services:
+  conan:
+    build: .
+    image: acekorneya/conan_enhanced_server:latest
+

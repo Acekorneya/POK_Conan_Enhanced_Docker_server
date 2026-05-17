@@ -2,22 +2,37 @@
 
 Docker project for the native Linux Conan Exiles Enhanced dedicated server. It installs Steam app `443030`, uses the Linux depot, keeps all mutable data on host volumes, runs the game as `pokuser`, supports RCON health checks, installs ordered Workshop mods, and creates automatic backups.
 
+The default Compose file pulls the published image:
+
+```text
+acekorneya/conan_enhanced_server:latest
+```
+
 ## Quick Start
 
 ```bash
 cp .env.example .env
 edit .env
-docker compose up -d --build
+docker compose up -d
 ```
 
 Required settings before first start:
 
 ```env
-ADMIN_PASSWORD=change-me
-RCON_PASSWORD=change-me-rcon
+ADMIN_PASSWORD=your-strong-admin-password
+RCON_PASSWORD=your-strong-rcon-password
 ```
 
 The first boot downloads the server, so it can take a while.
+
+For end users, the only required files are:
+
+```text
+docker-compose.yml
+.env
+```
+
+They do not need the Dockerfile or scripts when using the published image. If they prefer the `.yaml` extension, they can rename `docker-compose.yml` to `docker-compose.yaml`; Docker Compose accepts either.
 
 ## Volumes
 
@@ -66,6 +81,14 @@ Manual update:
 
 ```bash
 docker compose run --rm conan update
+```
+
+## Local Image Builds
+
+Most users should not build the image locally. Maintainers can build from this repository with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml build
 ```
 
 ## Mods
@@ -136,4 +159,3 @@ shellcheck scripts/*.sh scripts/entrypoint scripts/root-entrypoint
 ## Notes
 
 This project targets Conan Exiles Enhanced native Linux server files. Legacy Wine/Xvfb server setups are intentionally out of scope.
-
