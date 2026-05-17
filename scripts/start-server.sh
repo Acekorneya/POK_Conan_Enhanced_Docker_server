@@ -32,7 +32,10 @@ args=(
 )
 
 if truthy "${RCON_ENABLED:-true}"; then
-  args+=("-RconEnabled=True" "-RconPort=${RCON_PORT:-25575}")
+  args+=("-RconEnabled=1" "-RconPort=${RCON_PORT:-25575}")
+  if [[ -n "${RCON_PASSWORD:-}" ]]; then
+    args+=("-RconPassword=${RCON_PASSWORD}")
+  fi
 fi
 
 shutdown_requested=false
@@ -107,7 +110,14 @@ trap handle_signal TERM INT
 
 log_section "Conan Launch"
 log_info "Selected launcher: ${launcher[*]}"
-log_info "Launch args: ${args[*]} $*"
+safe_args=()
+for arg in "${args[@]}" "$@"; do
+  case "$arg" in
+    -RconPassword=*) safe_args+=("-RconPassword=***") ;;
+    *) safe_args+=("$arg") ;;
+  esac
+done
+log_info "Launch args: ${safe_args[*]}"
 
 run_periodic_backups &
 backup_pid="$!"

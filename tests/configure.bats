@@ -14,7 +14,7 @@ setup() {
   [ "$status" -eq 0 ]
   cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer"
   grep -q '^ServerName=Test Server$' "$cfg/Engine.ini"
-  grep -q '^RconEnabled=True$' "$cfg/Game.ini"
+  grep -q '^RconEnabled=1$' "$cfg/Game.ini"
   grep -q '^RconPassword=rcon$' "$cfg/Game.ini"
   grep -q '^AdminPassword=admin$' "$cfg/ServerSettings.ini"
   grep -q '^ServerCommunity=0$' "$cfg/ServerSettings.ini"
@@ -42,4 +42,40 @@ setup() {
   run scripts/configure-server.sh
   [ "$status" -ne 0 ]
   [[ "$output" == *"COMMUNITY must be one of: 0 1 2 3 4"* ]]
+}
+
+@test "configure-server applies raw ServerSettings overrides" {
+  export AvatarLifetime=600
+  export MaxAllowedPing=300
+  export BuildingPickupEnabled=False
+  run scripts/configure-server.sh
+  [ "$status" -eq 0 ]
+  cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer/ServerSettings.ini"
+  grep -q '^AvatarLifetime=600$' "$cfg"
+  grep -q '^MaxAllowedPing=300$' "$cfg"
+  grep -q '^BuildingPickupEnabled=False$' "$cfg"
+}
+
+@test "configure-server converts Los Angeles weekend raid windows to UTC" {
+  export TZ=America/Los_Angeles
+  export PVP_BUILDING_DAMAGE_DAYS=weekends
+  export PVP_BUILDING_DAMAGE_START=11:00
+  export PVP_BUILDING_DAMAGE_END=23:00
+  export AVATAR_SUMMONING_DAYS=weekends
+  export AVATAR_SUMMONING_START=11:00
+  export AVATAR_SUMMONING_END=23:00
+  run scripts/configure-server.sh
+  [ "$status" -eq 0 ]
+  cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer/ServerSettings.ini"
+  grep -q '^RestrictPVPBuildingDamageTime=True$' "$cfg"
+  grep -q '^CanDamagePlayerOwnedStructures=True$' "$cfg"
+  grep -q '^PVPBuildingDamageEnabledSaturday=True$' "$cfg"
+  grep -q '^PVPBuildingDamageEnabledSunday=True$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSaturdayStart=1800$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSaturdayEnd=0600$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSundayStart=1800$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSundayEnd=0600$' "$cfg"
+  grep -q '^RestrictAvatarSummoningTime=True$' "$cfg"
+  grep -q '^AvatarSummoningTimeWeekendStart=1800$' "$cfg"
+  grep -q '^AvatarSummoningTimeWeekendEnd=0600$' "$cfg"
 }

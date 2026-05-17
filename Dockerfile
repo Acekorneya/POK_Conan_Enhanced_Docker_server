@@ -39,6 +39,7 @@ RUN dpkg --add-architecture i386 \
 COPY --from=rcon-builder /go/bin/gorcon /usr/local/bin/rcon
 
 COPY scripts/ /usr/local/bin/
+COPY config/ /usr/local/share/conan-enhanced/config/
 
 RUN chmod +x /usr/local/bin/*.sh \
     && chmod +x /usr/local/bin/entrypoint /usr/local/bin/root-entrypoint \

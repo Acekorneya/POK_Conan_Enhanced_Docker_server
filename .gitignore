@@ -3,3 +3,19 @@ data/
 tmp/
 .cache/
 
+# Local server config
+*.ini
+
+# Screenshots and image assets
+screenshots/
+Screenshots/
+images/
+Images/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.webp
+*.tif
+*.tiff

@@ -101,6 +101,30 @@ MOD_IDS=123456789,987654321
 
 On start, each item is downloaded with SteamCMD, its `.pak` plus matching `.ucas/.utoc` files are copied into `ConanSandbox/Mods`, and `modlist.txt` is generated in the same order.
 
+## Server Settings
+
+Common settings are documented in `.env.example`. Advanced `ServerSettings.ini` keys can also be passed directly without adding every possible key to the example file:
+
+```env
+AvatarLifetime=600
+MaxAllowedPing=300
+BuildingPickupEnabled=False
+```
+
+Local-time schedule helpers use `TZ` and render UTC values into `ServerSettings.ini`:
+
+```env
+TZ=America/Los_Angeles
+PVP_BUILDING_DAMAGE_DAYS=weekends
+PVP_BUILDING_DAMAGE_START=11:00
+PVP_BUILDING_DAMAGE_END=23:00
+AVATAR_SUMMONING_DAYS=weekends
+AVATAR_SUMMONING_START=11:00
+AVATAR_SUMMONING_END=23:00
+```
+
+Days accept `Monday` through `Sunday` plus shortcuts: `weekdays`, `weekends`, and `all`.
+
 ## Backups
 
 Backups run every `BACKUP_INTERVAL_MINUTES` and again during graceful shutdown when `BACKUP_ON_STOP=true`.
