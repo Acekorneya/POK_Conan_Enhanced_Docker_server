@@ -72,3 +72,31 @@ setup() {
   [ "${lines[1]}" = "North America" ]
   [ "${lines[2]}" = "enabled" ]
 }
+
+@test "local_steam_build_id parses appmanifest buildid" {
+  manifest="$(mktemp)"
+  printf '"AppState"\n{\n  "appid" "443030"\n  "buildid" "123456"\n}\n' > "$manifest"
+  run bash -c "source scripts/lib.sh; local_steam_build_id '$manifest'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "123456" ]
+}
+
+@test "steam_app_info_build_id parses selected branch buildid" {
+  appinfo="$(mktemp)"
+  printf '"443030"\n{\n  "depots"\n  {\n    "branches"\n    {\n      "public"\n      {\n        "buildid" "111"\n      }\n      "testlive"\n      {\n        "buildid" "222"\n      }\n    }\n  }\n}\n' > "$appinfo"
+  run bash -c "source scripts/lib.sh; steam_app_info_build_id '$appinfo' testlive"
+  [ "$status" -eq 0 ]
+  [ "$output" = "222" ]
+}
+
+@test "countdown marks use default thirty minute cadence" {
+  run bash -c 'source scripts/lib.sh; countdown_marks_seconds 30'
+  [ "$status" -eq 0 ]
+  [ "$output" = $'1800\n1500\n1200\n900\n600\n300\n60\n30\n5\n1' ]
+}
+
+@test "countdown marks handle non-multiple notice values" {
+  run bash -c 'source scripts/lib.sh; countdown_marks_seconds 17'
+  [ "$status" -eq 0 ]
+  [ "$output" = $'1020\n900\n600\n300\n60\n30\n5\n1' ]
+}

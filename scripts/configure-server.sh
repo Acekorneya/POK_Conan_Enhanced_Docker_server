@@ -128,6 +128,32 @@ apply_avatar_schedule() {
   fi
 }
 
+schedule_summary() {
+  local prefix="$1"
+  local days_var="${prefix}_DAYS"
+  local start_var="${prefix}_START"
+  local end_var="${prefix}_END"
+  local days="${!days_var-}"
+  local start="${!start_var-}"
+  local end="${!end_var-}"
+  if [[ -n "$days" || -n "$start" || -n "$end" ]]; then
+    printf '%s %s-%s %s' "$days" "$start" "$end" "${TZ:-UTC}"
+  else
+    printf 'unrestricted'
+  fi
+}
+
+log_effective_server_settings() {
+  log_section "Effective Server Settings"
+  log_info "Browser: Community=$(community_label "${COMMUNITY:-0}") Region=$(region_label "${SERVER_REGION:-0}") VoiceChat=$(voice_chat_label "${SERVER_VOICE_CHAT:-0}")"
+  log_info "Rules: PvP=${PVP_ENABLED:-true} BuildingDamage=${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false} BattlEye=${ENABLE_BATTLEYE:-true} ClanMaxSize=${CLAN_MAX_SIZE:-10} BuildingAnywhere=${ALLOW_BUILDING_ANYWHERE:-false} BuildingAbandonment=${BUILDING_ABANDONMENT_ENABLED:-true}"
+  log_info "Death and avatars: DropEquipment=${DROP_EQUIPMENT_ON_DEATH:-true} DropBackpack=${DROP_BACKPACK_ON_DEATH:-true} Avatars=${AVATAR_ENABLED:-true} MaxNudity=${MAX_NUDITY:-0}"
+  log_info "Progression rates: Harvest=${HARVEST_AMOUNT_MULTIPLIER:-1.0} XP=${XP_RATE_MULTIPLIER:-1.0} KillXP=${PLAYER_XP_KILL_MULTIPLIER:-1.0} TimeXP=${PLAYER_XP_TIME_MULTIPLIER:-1.0} CraftXP=${PLAYER_XP_CRAFT_MULTIPLIER:-1.0} HarvestXP=${PLAYER_XP_HARVEST_MULTIPLIER:-1.0}"
+  log_info "World rates: DayCycle=${DAY_CYCLE_SPEED_SCALE:-1.0} Day=${DAY_TIME_SPEED_SCALE:-1.0} Night=${NIGHT_TIME_SPEED_SCALE:-1.0} HealthRegen=${PLAYER_HEALTH_REGEN_SPEED_SCALE:-1.0} SprintStamina=${PLAYER_STAMINA_COST_SPRINT_MULTIPLIER:-1.0} Stamina=${PLAYER_STAMINA_COST_MULTIPLIER:-1.0}"
+  log_info "Crafting and NPC rates: NPCRespawn=${NPC_RESPAWN_MULTIPLIER:-1.0} ThrallConversion=${THRALL_CONVERSION_MULTIPLIER:-1.0} CraftingCost=${CRAFTING_COST_MULTIPLIER:-1.0} FuelBurn=${FUEL_BURN_TIME_MULTIPLIER:-1.0} Spoil=${ITEM_SPOIL_RATE_SCALE:-1.0}"
+  log_info "Schedules: PvP=$(schedule_summary PVP_TIME) BuildingDamage=$(schedule_summary PVP_BUILDING_DAMAGE) AvatarSummoning=$(schedule_summary AVATAR_SUMMONING)"
+}
+
 require_nonempty ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
 reject_placeholder ADMIN_PASSWORD "${ADMIN_PASSWORD:-}" change-me admin password
 if truthy "${RCON_ENABLED:-true}"; then
@@ -210,5 +236,6 @@ if [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" ]]; then
 fi
 apply_avatar_schedule "$settings_ini"
 apply_server_setting_overrides "$settings_ini" "$SERVER_SETTINGS_KEYS_FILE"
+log_effective_server_settings
 
 log_info "Config files written to $config_dir"

@@ -91,6 +91,28 @@ require_uint() {
   fi
 }
 
+require_positive_uint() {
+  local name="$1"
+  local value="$2"
+  require_uint "$name" "$value" || return 1
+  if (( value < 1 )); then
+    echo "$name must be greater than or equal to 1, got: $value" >&2
+    return 1
+  fi
+}
+
+require_uint_between() {
+  local name="$1"
+  local value="$2"
+  local min="$3"
+  local max="$4"
+  require_uint "$name" "$value" || return 1
+  if (( value < min || value > max )); then
+    echo "$name must be between $min and $max, got: $value" >&2
+    return 1
+  fi
+}
+
 require_nonempty() {
   local name="$1"
   local value="$2"
@@ -292,6 +314,15 @@ latest_save_mtime() {
   printf '%s\n' "$latest"
 }
 
+server_running() {
+  local pid="${1:-}"
+  local stat
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  stat="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+  [[ -n "$stat" && "$stat" != Z* ]]
+}
+
 server_config_dir() {
   printf '%s/ConanSandbox/Saved/Config/LinuxServer\n' "${SERVER_DIR:-/data/server}"
 }
@@ -326,14 +357,14 @@ apply_server_setting_overrides() {
     if printenv "$key" >/dev/null 2>&1; then
       value="$(printenv "$key")"
       ini_set "$file" "ServerSettings" "$key" "$value"
-      log_info "Applied ServerSettings override from env: $key"
+      log_info "Applied ServerSettings override from env: $key=$value"
       applied=$((applied + 1))
     fi
     env_name="CONAN_SETTING_$key"
     if printenv "$env_name" >/dev/null 2>&1; then
       value="$(printenv "$env_name")"
       ini_set "$file" "ServerSettings" "$key" "$value"
-      log_info "Applied ServerSettings override from env: $env_name -> $key"
+      log_info "Applied ServerSettings override from env: $env_name -> $key=$value"
       applied=$((applied + 1))
     fi
   done < "$allowlist"
@@ -348,4 +379,74 @@ apply_server_setting_overrides() {
   done < <(env)
 
   log_info "Applied $applied advanced ServerSettings override(s)"
+}
+
+local_steam_build_id() {
+  local manifest="${1:-${SERVER_DIR:-/data/server}/steamapps/appmanifest_443030.acf}"
+  [[ -f "$manifest" ]] || return 1
+  awk '
+    $1 == "\"buildid\"" {
+      value = $2
+      gsub(/"/, "", value)
+      print value
+      exit
+    }
+  ' "$manifest"
+}
+
+steam_app_info_build_id() {
+  local file="$1"
+  local branch="${2:-public}"
+  awk -v branch="$branch" '
+    index($0, "\"" branch "\"") {
+      in_branch = 1
+      next
+    }
+    in_branch && $1 == "\"buildid\"" {
+      value = $2
+      gsub(/"/, "", value)
+      print value
+      exit
+    }
+  ' "$file"
+}
+
+countdown_marks_seconds() {
+  local minutes="$1"
+  local notice_sec mark minute
+  require_positive_uint AUTO_UPDATE_RESTART_NOTICE_MINUTES "$minutes" || return 1
+  notice_sec=$(( minutes * 60 ))
+
+  printf '%s\n' "$notice_sec"
+
+  minute=$(( ((minutes - 1) / 5) * 5 ))
+  while (( minute >= 5 )); do
+    mark=$(( minute * 60 ))
+    if (( mark < notice_sec )); then
+      printf '%s\n' "$mark"
+    fi
+    minute=$(( minute - 5 ))
+  done
+
+  for mark in 60 30 5 1; do
+    if (( mark < notice_sec )); then
+      printf '%s\n' "$mark"
+    fi
+  done
+}
+
+countdown_label() {
+  local seconds="$1"
+  if (( seconds >= 60 )); then
+    local minutes=$(( seconds / 60 ))
+    if (( minutes == 1 )); then
+      printf '1 minute'
+    else
+      printf '%s minutes' "$minutes"
+    fi
+  elif (( seconds == 1 )); then
+    printf '1 second'
+  else
+    printf '%s seconds' "$seconds"
+  fi
 }

@@ -75,7 +75,16 @@ Startup uses a narrow sudo helper to update `pokuser` to the configured UID/GID 
 
 ## Updates
 
-`AUTO_UPDATE=true` runs SteamCMD update on container start. Set it to `false` to skip updates when server files already exist.
+`AUTO_UPDATE=true` runs SteamCMD update on container start and enables the periodic update monitor while the server is running. Set it to `false` to skip startup updates when server files already exist and disable the monitor.
+
+The monitor checks Steam build IDs on this interval:
+
+```env
+AUTO_UPDATE_CHECK_INTERVAL_HOURS=6
+AUTO_UPDATE_RESTART_NOTICE_MINUTES=30
+```
+
+When a new build is detected, the container broadcasts restart warnings at countdown marks, sends RCON `shutdown`, waits for save-file timestamp activity, updates the server with SteamCMD, reapplies config and mods, relaunches the game, and verifies health with RCON.
 
 Manual update:
 
@@ -149,20 +158,20 @@ docker compose run --rm conan backup
 On `docker compose stop`, restart, or a normal TERM/INT signal, the container:
 
 1. sends an optional RCON broadcast
-2. runs Conan RCON `save`
+2. runs Conan RCON `shutdown`
 3. waits for save-file timestamp activity
 4. creates a final backup
 5. terminates the server process
 
-A raw `SIGKILL` cannot be trapped by Docker or the game, so scheduled backups are still important.
+Normal Docker stops use this immediate graceful path rather than the automatic update countdown. A raw `SIGKILL` cannot be trapped by Docker or the game, so scheduled backups are still important.
 
 ## RCON
 
 Run RCON commands from inside the container:
 
 ```bash
+docker compose exec conan rcon help
 docker compose exec conan rcon listplayers
-docker compose exec conan rcon save
 ```
 
 ## Tests

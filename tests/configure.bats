@@ -79,3 +79,16 @@ setup() {
   grep -q '^AvatarSummoningTimeWeekendStart=1800$' "$cfg"
   grep -q '^AvatarSummoningTimeWeekendEnd=0600$' "$cfg"
 }
+
+@test "configure-server logs effective settings without secret values" {
+  export TZ=UTC
+  export PVP_TIME_DAYS=weekends
+  export PVP_TIME_START=18:00
+  export PVP_TIME_END=22:00
+  run scripts/configure-server.sh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"========== Effective Server Settings =========="* ]]
+  [[ "$output" == *"Schedules: PvP=weekends 18:00-22:00 UTC"* ]]
+  [[ "$output" != *"admin"* ]]
+  [[ "$output" != *"rcon"* ]]
+}
