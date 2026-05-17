@@ -34,6 +34,50 @@ rcon_broadcast() {
   rcon_command broadcast "$message" >/dev/null 2>&1 || log_warn "RCON broadcast failed"
 }
 
+conan_server_pids() {
+  local pid stat args
+  ps -eo pid=,stat=,args= | while read -r pid stat args; do
+    [[ -n "${pid:-}" && -n "${stat:-}" ]] || continue
+    [[ "$stat" == Z* ]] && continue
+    case "$args" in
+      *ConanSandboxServer-Linux-Shipping*|*ConanSandboxServer.sh*)
+        if [[ "$pid" != "$$" ]]; then
+          printf '%s\n' "$pid"
+        fi
+        ;;
+    esac
+  done
+}
+
+conan_processes_running() {
+  [[ -n "$(conan_server_pids)" ]]
+}
+
+ensure_no_conan_processes() {
+  local pids
+  pids="$(conan_server_pids | tr '\n' ' ' | xargs 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    log_error "Refusing to launch while Conan server process(es) still exist: $pids"
+    return 1
+  fi
+}
+
+wait_for_conan_processes_gone() {
+  local timeout="${1:-10}"
+  local deadline pids
+  deadline=$(( $(date +%s) + timeout ))
+  while (( $(date +%s) < deadline )); do
+    pids="$(conan_server_pids | tr '\n' ' ' | xargs 2>/dev/null || true)"
+    if [[ -z "$pids" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  pids="$(conan_server_pids | tr '\n' ' ' | xargs 2>/dev/null || true)"
+  [[ -z "$pids" ]]
+}
+
 steam_latest_build_id() {
   local tmp build_id
   tmp="$(mktemp)"
@@ -105,6 +149,7 @@ launch_server() {
   done
   log_info "Launch args: ${safe_args[*]}"
 
+  ensure_no_conan_processes
   cd "$SERVER_DIR"
   log_info "Starting Conan server process..."
   "${launcher[@]}" "${args[@]}" "$@" &
@@ -343,7 +388,7 @@ wait_for_rcon_shutdown() {
       log_info "Save-file timestamp changed after RCON shutdown"
       save_changed=true
     fi
-    if ! server_running "$server_pid"; then
+    if ! server_running "$server_pid" && ! conan_processes_running; then
       break
     fi
     sleep 2
@@ -356,23 +401,28 @@ wait_for_rcon_shutdown() {
 }
 
 terminate_server_if_needed() {
-  if ! server_running "$server_pid"; then
+  local pids pid stop_grace="${SERVER_STOP_GRACE_SECONDS:-10}"
+  require_positive_uint SERVER_STOP_GRACE_SECONDS "$stop_grace" || return 1
+  pids="$(conan_server_pids | tr '\n' ' ' | xargs 2>/dev/null || true)"
+  if ! server_running "$server_pid" && [[ -z "$pids" ]]; then
     return 0
   fi
 
-  log_warn "Conan server process $server_pid is still running; sending SIGTERM"
-  kill -TERM "$server_pid" 2>/dev/null || true
-  for _ in {1..10}; do
-    if ! server_running "$server_pid"; then
-      return 0
-    fi
-    sleep 1
+  log_warn "Conan server process(es) still running; sending SIGTERM to tracked PID ${server_pid:-unknown} and Conan PID(s): ${pids:-none}"
+  if server_running "$server_pid"; then
+    kill -TERM "$server_pid" 2>/dev/null || true
+  fi
+  for pid in $pids; do
+    kill -TERM "$pid" 2>/dev/null || true
   done
 
-  if server_running "$server_pid"; then
-    log_warn "Conan server process $server_pid did not stop after SIGTERM; sending SIGKILL"
-    kill -KILL "$server_pid" 2>/dev/null || true
+  if ! wait_for_conan_processes_gone "$stop_grace"; then
+    pids="$(conan_server_pids | tr '\n' ' ' | xargs 2>/dev/null || true)"
+    log_error "Conan server process(es) did not stop after SIGTERM: ${pids:-unknown}"
+    return 1
   fi
+
+  return 0
 }
 
 graceful_stop_server() {
@@ -396,7 +446,7 @@ graceful_stop_server() {
     log_warn "RCON shutdown skipped because RCON is disabled or RCON_PASSWORD is not set"
   fi
 
-  terminate_server_if_needed
+  terminate_server_if_needed || return 1
   wait "$server_pid" 2>/dev/null || true
 
   if truthy "${BACKUP_ENABLED:-true}" && truthy "${BACKUP_ON_STOP:-true}"; then
@@ -523,11 +573,7 @@ wait_for_server_health() {
 }
 
 watchdog_health_ok() {
-  server_running "$server_pid" || return 1
-  if truthy "${RCON_ENABLED:-true}"; then
-    rcon_command help >/dev/null 2>&1 || return 1
-  fi
-  return 0
+  server_running "$server_pid"
 }
 
 run_watchdog_monitor() {
@@ -614,7 +660,11 @@ handle_signal() {
   stop_scheduled_broadcasts
   stop_watchdog_monitor
   stop_update_monitor
-  graceful_stop_server stop "Server shutting down, saving world."
+  graceful_stop_server stop "Server shutting down, saving world." || {
+    stop_periodic_backups
+    rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
+    exit 1
+  }
   stop_periodic_backups
   rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
   exit 0
@@ -684,12 +734,20 @@ main() {
         else
           log_warn "Server watchdog restarting Conan process (attempt $watchdog_restart_count/unlimited)"
         fi
-        graceful_stop_server watchdog "Server health check failed. Restarting server."
+        if ! graceful_stop_server watchdog "Server health check failed. Restarting server."; then
+          log_error "Watchdog restart could not fully stop the old Conan process; exiting for Docker restart policy"
+          stop_periodic_backups
+          exit 1
+        fi
         stop_periodic_backups
         verify_after_launch=true
         watchdog_extra_grace_seconds="${SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS:-300}"
       else
-        graceful_stop_server update ""
+        if ! graceful_stop_server update ""; then
+          log_error "Update restart could not fully stop the old Conan process; exiting for Docker restart policy"
+          stop_periodic_backups
+          exit 1
+        fi
         stop_periodic_backups
         verify_after_launch=true
       fi

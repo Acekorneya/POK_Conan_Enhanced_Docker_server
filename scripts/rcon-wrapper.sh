@@ -9,5 +9,6 @@ require_nonempty RCON_PASSWORD "${RCON_PASSWORD:-}"
 
 host="${RCON_HOST:-127.0.0.1}"
 port="${RCON_PORT:-25575}"
+command="$*"
 
-exec rcon -a "${host}:${port}" -p "$RCON_PASSWORD" "$@"
+exec rcon -a "${host}:${port}" -p "$RCON_PASSWORD" "$command"

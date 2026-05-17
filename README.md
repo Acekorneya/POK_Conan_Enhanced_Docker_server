@@ -103,9 +103,10 @@ SERVER_WATCHDOG_FAILURE_THRESHOLD=3
 SERVER_WATCHDOG_STARTUP_GRACE_SECONDS=600
 SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS=300
 SERVER_WATCHDOG_MAX_RESTARTS=3
+SERVER_STOP_GRACE_SECONDS=10
 ```
 
-The watchdog checks that the Conan process is running and, when RCON is enabled, that `rcon help` responds. After the failure threshold is reached, it uses the same graceful RCON `shutdown` path, relaunches the server, and verifies health again. If repeated recovery restarts exceed `SERVER_WATCHDOG_MAX_RESTARTS`, the container exits non-zero so Docker's restart policy can recreate it.
+The watchdog checks that the tracked Conan process is still running. It no longer restarts the game only because RCON misses a reply, which avoids launching a second server while the first one is still alive. After the failure threshold is reached, it uses the same graceful RCON `shutdown` path, verifies that all Conan processes stopped, relaunches the server, and verifies health again. If the old process cannot stop within `SERVER_STOP_GRACE_SECONDS`, or repeated recovery restarts exceed `SERVER_WATCHDOG_MAX_RESTARTS`, the container exits non-zero so Docker's restart policy can recreate it.
 
 ## Local Image Builds
 

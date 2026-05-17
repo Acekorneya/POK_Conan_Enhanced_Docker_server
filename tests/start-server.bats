@@ -10,6 +10,16 @@ setup() {
   touch "$SERVER_DIR/ConanSandbox/Saved/game.db"
 }
 
+teardown() {
+  if [[ -n "${FAKE_CONAN_PID:-}" ]]; then
+    kill "$FAKE_CONAN_PID" 2>/dev/null || true
+    sleep 0.1
+    kill -KILL "$FAKE_CONAN_PID" 2>/dev/null || true
+    wait "$FAKE_CONAN_PID" 2>/dev/null || true
+    unset FAKE_CONAN_PID
+  fi
+}
+
 @test "graceful_stop_server sends rcon shutdown and not save" {
   fake_rcon="$BATS_TEST_TMPDIR/rcon-wrapper"
   rcon_log="$BATS_TEST_TMPDIR/rcon.log"
@@ -69,6 +79,69 @@ SH
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"Server watchdog health check failed (1/1)"* ]]
+}
+
+@test "watchdog monitor ignores rcon failure while tracked process is alive" {
+  run timeout 3 bash -c '
+    set -euo pipefail
+    export SERVER_DIR="$1"
+    export RCON_PASSWORD=secret
+    export RCON_ENABLED=true
+    export RCON_WRAPPER=/bin/false
+    export SERVER_WATCHDOG_INTERVAL_SECONDS=1
+    export SERVER_WATCHDOG_FAILURE_THRESHOLD=1
+    export SERVER_WATCHDOG_STARTUP_GRACE_SECONDS=0
+    export SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS=0
+    source scripts/start-server.sh
+    sleep 30 &
+    server_pid="$!"
+    trap '\''kill "$server_pid" 2>/dev/null || true'\'' EXIT
+    watchdog_request_file="$2"
+    update_active_file="$3"
+    update_request_file="$4"
+    run_watchdog_monitor
+  ' bash "$SERVER_DIR" "$BATS_TEST_TMPDIR/watchdog-request" "$BATS_TEST_TMPDIR/update-active" "$BATS_TEST_TMPDIR/update-request"
+
+  [ "$status" -eq 124 ]
+  [ ! -f "$BATS_TEST_TMPDIR/watchdog-request" ]
+  [[ "$output" != *"Server watchdog health check failed"* ]]
+}
+
+@test "launch_server refuses to start while another Conan process exists" {
+  conan_name="ConanSandboxServer-Linux""-Shipping"
+  bash -c 'exec -a "$1" sleep 30' bash "$conan_name" &
+  FAKE_CONAN_PID="$!"
+  sleep 0.1
+
+  run bash -c '
+    set -euo pipefail
+    export SERVER_DIR="$1"
+    source scripts/start-server.sh
+    launcher=(sleep)
+    args=(30)
+    launch_server
+  ' bash "$SERVER_DIR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Refusing to launch while Conan server process(es) still exist"* ]]
+}
+
+@test "terminate_server_if_needed fails when Conan process survives SIGTERM" {
+  conan_name="ConanSandboxServer-Linux""-Shipping"
+  bash -c 'trap "" TERM; exec -a "$1" sleep 30' bash "$conan_name" &
+  FAKE_CONAN_PID="$!"
+  sleep 0.1
+
+  run bash -c '
+    set -euo pipefail
+    export SERVER_STOP_GRACE_SECONDS=1
+    source scripts/start-server.sh
+    server_pid=999999
+    terminate_server_if_needed
+  '
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"did not stop after SIGTERM"* ]]
 }
 
 @test "scheduled broadcasts stay disabled when message is blank" {
