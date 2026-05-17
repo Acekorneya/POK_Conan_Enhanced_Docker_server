@@ -20,6 +20,10 @@ setup() {
   grep -q '^ServerCommunity=0$' "$cfg/ServerSettings.ini"
   grep -q '^serverRegion=0$' "$cfg/ServerSettings.ini"
   grep -q '^serverVoiceChat=0$' "$cfg/ServerSettings.ini"
+  grep -q '^DropEquipmentOnDeath=true$' "$cfg/ServerSettings.ini"
+  grep -q '^DropBackpackOnDeath=true$' "$cfg/ServerSettings.ini"
+  grep -q '^EverybodyCanLootCorpse=true$' "$cfg/ServerSettings.ini"
+  grep -q '^ThrallConversionMultiplier=0.5$' "$cfg/ServerSettings.ini"
 }
 
 @test "configure-server requires admin password" {
@@ -89,6 +93,7 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"========== Effective Server Settings =========="* ]]
   [[ "$output" == *"Schedules: PvP=weekends 18:00-22:00 UTC"* ]]
+  [[ "$output" == *"EverybodyCanLootCorpse=true"* ]]
   [[ "$output" != *"admin"* ]]
   [[ "$output" != *"rcon"* ]]
 }

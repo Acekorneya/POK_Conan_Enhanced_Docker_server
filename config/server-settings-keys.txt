@@ -64,6 +64,7 @@ EnableTargetLock
 EventLogPvECauserPrivacy
 EventLogPvPCauserPrivacy
 EventSystemEnabled
+EverybodyCanLootCorpse
 FeedBoxRangeMultiplier
 FollowerRescueCooldown
 FriendlyFireDamageMultiplier
@@ -223,4 +224,3 @@ bUndermeshDetectionEnabled
 clanMaxSize
 serverRegion
 serverVoiceChat
-
