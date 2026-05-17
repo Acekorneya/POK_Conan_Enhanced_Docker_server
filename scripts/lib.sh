@@ -7,6 +7,73 @@ truthy() {
   esac
 }
 
+log_timestamp() {
+  date '+%Y-%m-%d %H:%M:%S'
+}
+
+log_info() {
+  printf '[%s] [INFO] %s\n' "$(log_timestamp)" "$*"
+}
+
+log_warn() {
+  printf '[%s] [WARN] %s\n' "$(log_timestamp)" "$*" >&2
+}
+
+log_error() {
+  printf '[%s] [ERROR] %s\n' "$(log_timestamp)" "$*" >&2
+}
+
+log_section() {
+  log_info "========== $* =========="
+}
+
+secret_state() {
+  if [[ -n "${1:-}" ]]; then
+    printf 'set'
+  else
+    printf 'not set'
+  fi
+}
+
+password_state() {
+  if [[ -n "${1:-}" ]]; then
+    printf 'enabled'
+  else
+    printf 'disabled'
+  fi
+}
+
+community_label() {
+  case "${1:-0}" in
+    0) printf 'Purist' ;;
+    1) printf 'Relaxed' ;;
+    2) printf 'HardCore' ;;
+    3) printf 'RolePlaying' ;;
+    4) printf 'Experimental' ;;
+    *) printf 'Unknown(%s)' "${1:-}" ;;
+  esac
+}
+
+region_label() {
+  case "${1:-0}" in
+    0) printf 'Europe' ;;
+    1) printf 'North America' ;;
+    2) printf 'Asia' ;;
+    3) printf 'Australia' ;;
+    4) printf 'South America' ;;
+    5) printf 'Japan' ;;
+    *) printf 'Unknown(%s)' "${1:-}" ;;
+  esac
+}
+
+voice_chat_label() {
+  case "${1:-0}" in
+    0) printf 'disabled' ;;
+    1) printf 'enabled' ;;
+    *) printf 'Unknown(%s)' "${1:-}" ;;
+  esac
+}
+
 require_uint() {
   local name="$1"
   local value="$2"

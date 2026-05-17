@@ -15,35 +15,48 @@ export STEAM_DIR="${STEAM_DIR:-/data/steam}"
 export BACKUP_DIR="${BACKUP_DIR:-/data/backups}"
 export STEAMCMD_DIR="${STEAMCMD_DIR:-/opt/steamcmd}"
 
+log_section "Conan Enhanced Server Startup"
+log_info "Running container init as root; server process will run as pokuser"
+log_info "Requested ownership: PUID=$PUID PGID=$PGID"
+log_info "Managed paths: SERVER_DIR=$SERVER_DIR STEAM_DIR=$STEAM_DIR BACKUP_DIR=$BACKUP_DIR STEAMCMD_DIR=$STEAMCMD_DIR"
+
 existing_group="$(getent group "$PGID" | cut -d: -f1 || true)"
 if [[ -n "$existing_group" && "$existing_group" != "pokuser" ]]; then
   primary_group="$PGID"
+  log_info "Using existing group '$existing_group' for PGID=$PGID"
 elif ! getent group pokuser >/dev/null; then
+  log_info "Creating pokuser group with PGID=$PGID"
   groupadd --gid "$PGID" pokuser
   primary_group="$PGID"
 else
   current_gid="$(getent group pokuser | cut -d: -f3)"
   if [[ "$current_gid" != "$PGID" ]]; then
+    log_info "Updating pokuser group from PGID=$current_gid to PGID=$PGID"
     groupmod --gid "$PGID" pokuser
   fi
   primary_group="$PGID"
 fi
 
 if ! id pokuser >/dev/null 2>&1; then
+  log_info "Creating pokuser with PUID=$PUID PGID=$primary_group"
   useradd --create-home --shell /bin/bash --uid "$PUID" --gid "$primary_group" pokuser
 else
   current_uid="$(id -u pokuser)"
   current_primary_gid="$(id -g pokuser)"
   if [[ "$current_uid" != "$PUID" || "$current_primary_gid" != "$primary_group" ]]; then
+    log_info "Updating pokuser from UID=$current_uid GID=$current_primary_gid to UID=$PUID GID=$primary_group"
     usermod --uid "$PUID" --gid "$primary_group" --home /home/pokuser pokuser
   fi
 fi
 
 mkdir -p "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" "$STEAMCMD_DIR" /home/pokuser
+log_info "Fixing ownership and execute permissions for managed paths"
 chown -R "$PUID:$PGID" "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" "$STEAMCMD_DIR" /home/pokuser
 chmod -R u+rwX,go+rX "$STEAMCMD_DIR"
+log_info "pokuser resolved as UID=$(id -u pokuser) GID=$(id -g pokuser)"
 
 export HOME=/home/pokuser
 cd "$SERVER_DIR"
 
+log_info "Dropping privileges and continuing startup as pokuser"
 exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups /usr/local/bin/server-command.sh "$@"

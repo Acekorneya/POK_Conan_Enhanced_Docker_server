@@ -12,6 +12,8 @@ MOD_IDS="${MOD_IDS:-}"
 mods_dir="$SERVER_DIR/ConanSandbox/Mods"
 workshop_dir="$STEAM_DIR/steamapps/workshop/content/440900"
 
+log_section "Workshop Mods"
+
 mkdir -p "$mods_dir"
 modlist="$mods_dir/modlist.txt"
 : > "$modlist"
@@ -22,12 +24,15 @@ while IFS= read -r id; do
 done < <(csv_words "$MOD_IDS")
 
 if (( ${#ids[@]} == 0 )); then
-  echo "No MOD_IDS configured."
+  log_info "No mods configured"
   exit 0
 fi
 
+log_info "Installing ${#ids[@]} Workshop mod(s): ${ids[*]}"
+
 for id in "${ids[@]}"; do
   require_uint MOD_IDS "$id"
+  log_info "Downloading Workshop item $id"
   HOME="$STEAM_DIR" "$STEAMCMD_DIR/steamcmd.sh" \
     +force_install_dir "$STEAM_DIR" \
     +login anonymous \
@@ -53,9 +58,12 @@ for id in "${ids[@]}"; do
 
   pak="${paks[0]}"
   base="${pak%.pak}"
+  log_info "Installing mod package $(basename "$pak")"
   cp -f "$pak" "$mods_dir/"
   for companion in "$base".ucas "$base".utoc; do
     [[ -f "$companion" ]] && cp -f "$companion" "$mods_dir/"
   done
   printf '%s\n' "$(basename "$pak")" >> "$modlist"
 done
+
+log_info "Generated mod list: $modlist"

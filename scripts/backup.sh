@@ -21,8 +21,11 @@ saved="$(saved_dir)"
 config="$(server_config_dir)"
 mkdir -p "$workdir/saves" "$workdir/config" "$workdir/mods"
 
+log_info "Creating $reason backup in $BACKUP_DIR"
+
 shopt -s nullglob
 for db in "$saved"/*.db; do
+  log_info "Backing up save database $(basename "$db")"
   sqlite3 "$db" ".backup '$workdir/saves/$(basename "$db")'" || cp -f "$db" "$workdir/saves/"
 done
 for sidecar in "$saved"/*.db-wal "$saved"/*.db-shm; do
@@ -44,12 +47,13 @@ mod_ids=${MOD_IDS:-}
 META
 
 tar -C "$workdir" -czf "$archive" .
-echo "Created backup: $archive"
+log_info "Created backup: $archive"
 
 require_uint BACKUP_RETENTION_COUNT "$BACKUP_RETENTION_COUNT"
 if (( BACKUP_RETENTION_COUNT > 0 )); then
   mapfile -t old_backups < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'conan-*.tar.gz' -printf '%T@ %p\n' | sort -nr | awk -v keep="$BACKUP_RETENTION_COUNT" 'NR > keep {print $2}')
   for old in "${old_backups[@]}"; do
+    log_info "Removing old backup: $old"
     rm -f "$old"
   done
 fi

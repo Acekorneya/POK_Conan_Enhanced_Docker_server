@@ -45,3 +45,30 @@ setup() {
   [ "${lines[3]}" = "4" ]
 }
 
+@test "secret_state reports only whether a secret is set" {
+  run bash -c 'source scripts/lib.sh; secret_state "super-secret"'
+  [ "$status" -eq 0 ]
+  [ "$output" = "set" ]
+
+  run bash -c 'source scripts/lib.sh; secret_state ""'
+  [ "$status" -eq 0 ]
+  [ "$output" = "not set" ]
+}
+
+@test "password_state reports enabled or disabled without printing the password" {
+  run bash -c 'source scripts/lib.sh; password_state "server-password"'
+  [ "$status" -eq 0 ]
+  [ "$output" = "enabled" ]
+
+  run bash -c 'source scripts/lib.sh; password_state ""'
+  [ "$status" -eq 0 ]
+  [ "$output" = "disabled" ]
+}
+
+@test "enum labels are human-readable" {
+  run bash -c 'source scripts/lib.sh; community_label 1; echo; region_label 1; echo; voice_chat_label 1'
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "Relaxed" ]
+  [ "${lines[1]}" = "North America" ]
+  [ "${lines[2]}" = "enabled" ]
+}
