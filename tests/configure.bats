@@ -20,8 +20,8 @@ setup() {
   grep -q '^ServerCommunity=0$' "$cfg/ServerSettings.ini"
   grep -q '^serverRegion=0$' "$cfg/ServerSettings.ini"
   grep -q '^serverVoiceChat=0$' "$cfg/ServerSettings.ini"
-  grep -q '^DropEquipmentOnDeath=true$' "$cfg/ServerSettings.ini"
-  grep -q '^DropBackpackOnDeath=true$' "$cfg/ServerSettings.ini"
+  grep -q '^DropEquipmentOnDeath=1$' "$cfg/ServerSettings.ini"
+  grep -q '^DropBackpackOnDeath=1$' "$cfg/ServerSettings.ini"
   grep -q '^EverybodyCanLootCorpse=true$' "$cfg/ServerSettings.ini"
   grep -q '^ThrallConversionMultiplier=0.5$' "$cfg/ServerSettings.ini"
 }
