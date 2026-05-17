@@ -13,6 +13,7 @@ export PGID="${PGID:-1000}"
 export SERVER_DIR="${SERVER_DIR:-/data/server}"
 export STEAM_DIR="${STEAM_DIR:-/data/steam}"
 export BACKUP_DIR="${BACKUP_DIR:-/data/backups}"
+export STEAMCMD_DIR="${STEAMCMD_DIR:-/opt/steamcmd}"
 
 existing_group="$(getent group "$PGID" | cut -d: -f1 || true)"
 if [[ -n "$existing_group" && "$existing_group" != "pokuser" ]]; then
@@ -38,8 +39,9 @@ else
   fi
 fi
 
-mkdir -p "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" /home/pokuser
-chown -R "$PUID:$PGID" "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" /home/pokuser
+mkdir -p "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" "$STEAMCMD_DIR" /home/pokuser
+chown -R "$PUID:$PGID" "$SERVER_DIR" "$STEAM_DIR" "$BACKUP_DIR" "$STEAMCMD_DIR" /home/pokuser
+chmod -R u+rwX,go+rX "$STEAMCMD_DIR"
 
 export HOME=/home/pokuser
 cd "$SERVER_DIR"

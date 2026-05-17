@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 SERVER_DIR="${SERVER_DIR:-/data/server}"
 STEAM_DIR="${STEAM_DIR:-/data/steam}"
+STEAMCMD_DIR="${STEAMCMD_DIR:-/opt/steamcmd}"
 AUTO_UPDATE="${AUTO_UPDATE:-true}"
 STEAM_BRANCH="${STEAM_BRANCH:-public}"
 STEAM_VALIDATE="${STEAM_VALIDATE:-false}"
@@ -37,4 +38,10 @@ fi
 
 args+=(+quit)
 
-HOME="$STEAM_DIR" /opt/steamcmd/steamcmd.sh "${args[@]}"
+if [[ ! -x "$STEAMCMD_DIR/steamcmd.sh" ]]; then
+  echo "$STEAMCMD_DIR/steamcmd.sh is not executable" >&2
+  ls -la "$STEAMCMD_DIR" >&2 || true
+  exit 1
+fi
+
+HOME="$STEAM_DIR" "$STEAMCMD_DIR/steamcmd.sh" "${args[@]}"

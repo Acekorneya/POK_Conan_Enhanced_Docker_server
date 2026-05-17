@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 SERVER_DIR="${SERVER_DIR:-/data/server}"
 STEAM_DIR="${STEAM_DIR:-/data/steam}"
+STEAMCMD_DIR="${STEAMCMD_DIR:-/opt/steamcmd}"
 MOD_IDS="${MOD_IDS:-}"
 mods_dir="$SERVER_DIR/ConanSandbox/Mods"
 workshop_dir="$STEAM_DIR/steamapps/workshop/content/440900"
@@ -27,7 +28,7 @@ fi
 
 for id in "${ids[@]}"; do
   require_uint MOD_IDS "$id"
-  HOME="$STEAM_DIR" /opt/steamcmd/steamcmd.sh \
+  HOME="$STEAM_DIR" "$STEAMCMD_DIR/steamcmd.sh" \
     +force_install_dir "$STEAM_DIR" \
     +login anonymous \
     +workshop_download_item 440900 "$id" \
