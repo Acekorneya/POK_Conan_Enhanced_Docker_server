@@ -12,10 +12,15 @@ STEAMCMD_DIR="${STEAMCMD_DIR:-/opt/steamcmd}"
 server_pid=""
 backup_pid=""
 update_pid=""
+watchdog_pid=""
 update_request_file="${TMPDIR:-/tmp}/conan-update-request.$$"
+update_active_file="${TMPDIR:-/tmp}/conan-update-active.$$"
+watchdog_request_file="${TMPDIR:-/tmp}/conan-watchdog-request.$$"
 shutdown_requested=false
 launcher=()
 args=()
+watchdog_restart_count=0
+watchdog_extra_grace_seconds=0
 
 rcon_command() {
   "${RCON_WRAPPER:-$SCRIPT_DIR/rcon-wrapper.sh}" "$@"
@@ -251,6 +256,7 @@ run_update_monitor() {
     fi
 
     if [[ "$latest_build" != "$local_build" ]]; then
+      touch "$update_active_file"
       run_update_countdown "$local_build" "$latest_build"
       printf 'local_build=%s latest_build=%s\n' "$local_build" "$latest_build" > "$update_request_file"
       return 0
@@ -286,9 +292,11 @@ stop_update_monitor() {
 }
 
 wait_for_server_health() {
+  local timeout="${1:-600}"
+  local label="${2:-restart}"
   local deadline
-  deadline=$(( $(date +%s) + 600 ))
-  log_info "Verifying Conan server health after update restart"
+  deadline=$(( $(date +%s) + timeout ))
+  log_info "Verifying Conan server health after $label"
 
   while (( $(date +%s) < deadline )); do
     if ! server_running "$server_pid"; then
@@ -309,14 +317,88 @@ wait_for_server_health() {
     sleep 5
   done
 
-  log_warn "Conan server health did not verify within 600 seconds"
+  log_warn "Conan server health did not verify within $timeout seconds"
   return 1
 }
 
+watchdog_health_ok() {
+  server_running "$server_pid" || return 1
+  if truthy "${RCON_ENABLED:-true}"; then
+    rcon_command help >/dev/null 2>&1 || return 1
+  fi
+  return 0
+}
+
+run_watchdog_monitor() {
+  local interval="${SERVER_WATCHDOG_INTERVAL_SECONDS:-60}"
+  local threshold="${SERVER_WATCHDOG_FAILURE_THRESHOLD:-3}"
+  local grace="${SERVER_WATCHDOG_STARTUP_GRACE_SECONDS:-600}"
+  local total_grace
+  local failures=0
+
+  require_positive_uint SERVER_WATCHDOG_INTERVAL_SECONDS "$interval" || return 1
+  require_positive_uint SERVER_WATCHDOG_FAILURE_THRESHOLD "$threshold" || return 1
+  require_uint SERVER_WATCHDOG_STARTUP_GRACE_SECONDS "$grace" || return 1
+  require_uint SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS "${watchdog_extra_grace_seconds:-0}" || return 1
+  total_grace=$(( grace + watchdog_extra_grace_seconds ))
+
+  log_info "Server watchdog enabled: interval=${interval}s failures=$threshold startup_grace=${total_grace}s"
+  sleep "$total_grace"
+
+  while true; do
+    if [[ -f "$update_active_file" || -f "$update_request_file" ]]; then
+      failures=0
+      sleep "$interval"
+      continue
+    fi
+
+    if watchdog_health_ok; then
+      if (( failures > 0 )); then
+        log_info "Server watchdog health recovered after $failures failed check(s)"
+      fi
+      failures=0
+    else
+      failures=$(( failures + 1 ))
+      log_warn "Server watchdog health check failed ($failures/$threshold)"
+      if (( failures >= threshold )); then
+        printf 'failures=%s threshold=%s\n' "$failures" "$threshold" > "$watchdog_request_file"
+        return 0
+      fi
+    fi
+
+    sleep "$interval"
+  done
+}
+
+start_watchdog_monitor() {
+  if ! truthy "${SERVER_WATCHDOG_ENABLED:-true}"; then
+    log_info "Server watchdog disabled"
+    return 0
+  fi
+
+  require_positive_uint SERVER_WATCHDOG_INTERVAL_SECONDS "${SERVER_WATCHDOG_INTERVAL_SECONDS:-60}"
+  require_positive_uint SERVER_WATCHDOG_FAILURE_THRESHOLD "${SERVER_WATCHDOG_FAILURE_THRESHOLD:-3}"
+  require_uint SERVER_WATCHDOG_STARTUP_GRACE_SECONDS "${SERVER_WATCHDOG_STARTUP_GRACE_SECONDS:-600}"
+  require_uint SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS "${SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS:-300}"
+  require_uint SERVER_WATCHDOG_MAX_RESTARTS "${SERVER_WATCHDOG_MAX_RESTARTS:-3}"
+
+  run_watchdog_monitor &
+  watchdog_pid="$!"
+}
+
+stop_watchdog_monitor() {
+  if [[ -n "$watchdog_pid" ]]; then
+    kill "$watchdog_pid" 2>/dev/null || true
+    wait "$watchdog_pid" 2>/dev/null || true
+    watchdog_pid=""
+  fi
+}
+
 cleanup_runtime() {
+  stop_watchdog_monitor
   stop_update_monitor
   stop_periodic_backups
-  rm -f "$update_request_file"
+  rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
 }
 
 handle_signal() {
@@ -325,20 +407,21 @@ handle_signal() {
   fi
   shutdown_requested=true
   log_info "Received stop signal"
+  stop_watchdog_monitor
   stop_update_monitor
   graceful_stop_server stop "Server shutting down, saving world."
   stop_periodic_backups
-  rm -f "$update_request_file"
+  rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
   exit 0
 }
 
 main() {
-  local status restart_requested verify_after_launch=false
+  local status restart_requested restart_reason verify_after_launch=false max_watchdog_restarts
 
   trap handle_signal TERM INT
 
   while true; do
-    rm -f "$update_request_file"
+    rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
     run_startup_tasks
     launch_server "$@"
 
@@ -346,25 +429,55 @@ main() {
     backup_pid="$!"
 
     if [[ "$verify_after_launch" == true ]]; then
-      wait_for_server_health || true
+      wait_for_server_health 600 "restart" || true
       verify_after_launch=false
     fi
 
     start_update_monitor
+    start_watchdog_monitor
+    watchdog_extra_grace_seconds=0
     restart_requested=false
+    restart_reason=""
     while server_running "$server_pid"; do
       if [[ -f "$update_request_file" ]]; then
         restart_requested=true
+        restart_reason="update"
+        break
+      fi
+      if [[ -f "$watchdog_request_file" ]]; then
+        restart_requested=true
+        restart_reason="watchdog"
         break
       fi
       sleep 2
     done
 
     if [[ "$restart_requested" == true ]]; then
+      stop_watchdog_monitor
       stop_update_monitor
-      graceful_stop_server update ""
-      stop_periodic_backups
-      verify_after_launch=true
+      if [[ "$restart_reason" == "watchdog" ]]; then
+        watchdog_restart_count=$(( watchdog_restart_count + 1 ))
+        max_watchdog_restarts="${SERVER_WATCHDOG_MAX_RESTARTS:-3}"
+        if (( max_watchdog_restarts > 0 && watchdog_restart_count > max_watchdog_restarts )); then
+          log_error "Server watchdog exceeded max restarts ($max_watchdog_restarts); exiting for Docker restart policy"
+          stop_periodic_backups
+          terminate_server_if_needed
+          exit 1
+        fi
+        if (( max_watchdog_restarts > 0 )); then
+          log_warn "Server watchdog restarting Conan process (attempt $watchdog_restart_count/$max_watchdog_restarts)"
+        else
+          log_warn "Server watchdog restarting Conan process (attempt $watchdog_restart_count/unlimited)"
+        fi
+        graceful_stop_server watchdog "Server health check failed. Restarting server."
+        stop_periodic_backups
+        verify_after_launch=true
+        watchdog_extra_grace_seconds="${SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS:-300}"
+      else
+        graceful_stop_server update ""
+        stop_periodic_backups
+        verify_after_launch=true
+      fi
       continue
     fi
 

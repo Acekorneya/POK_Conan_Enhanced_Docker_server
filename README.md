@@ -92,6 +92,21 @@ Manual update:
 docker compose run --rm conan update
 ```
 
+## Watchdog
+
+The container has an internal watchdog that restarts only the Conan server process when repeated health checks fail:
+
+```env
+SERVER_WATCHDOG_ENABLED=true
+SERVER_WATCHDOG_INTERVAL_SECONDS=60
+SERVER_WATCHDOG_FAILURE_THRESHOLD=3
+SERVER_WATCHDOG_STARTUP_GRACE_SECONDS=600
+SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS=300
+SERVER_WATCHDOG_MAX_RESTARTS=3
+```
+
+The watchdog checks that the Conan process is running and, when RCON is enabled, that `rcon help` responds. After the failure threshold is reached, it uses the same graceful RCON `shutdown` path, relaunches the server, and verifies health again. If repeated recovery restarts exceed `SERVER_WATCHDOG_MAX_RESTARTS`, the container exits non-zero so Docker's restart policy can recreate it.
+
 ## Local Image Builds
 
 Most users should not build the image locally. Maintainers can build from this repository with:

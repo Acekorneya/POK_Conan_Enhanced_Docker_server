@@ -47,3 +47,26 @@ SH
   ! grep -q '^save$' "$rcon_log"
   [[ "$output" == *"Save-file timestamp changed after RCON shutdown"* ]]
 }
+
+@test "watchdog monitor requests restart after failed health threshold" {
+  run bash -c '
+    set -euo pipefail
+    export SERVER_DIR="$1"
+    export RCON_PASSWORD=secret
+    export RCON_ENABLED=true
+    export SERVER_WATCHDOG_INTERVAL_SECONDS=1
+    export SERVER_WATCHDOG_FAILURE_THRESHOLD=1
+    export SERVER_WATCHDOG_STARTUP_GRACE_SECONDS=0
+    export SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS=0
+    source scripts/start-server.sh
+    server_pid=999999
+    watchdog_request_file="$2"
+    update_active_file="$3"
+    update_request_file="$4"
+    run_watchdog_monitor
+    test -f "$watchdog_request_file"
+  ' bash "$SERVER_DIR" "$BATS_TEST_TMPDIR/watchdog-request" "$BATS_TEST_TMPDIR/update-active" "$BATS_TEST_TMPDIR/update-request"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Server watchdog health check failed (1/1)"* ]]
+}
