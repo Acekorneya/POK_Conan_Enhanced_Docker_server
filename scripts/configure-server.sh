@@ -94,6 +94,12 @@ apply_avatar_schedule() {
   local weekday_written=false weekend_written=false
 
   if [[ -z "$days" && -z "$start" && -z "$end" ]]; then
+    # Clean reset if no summon schedule is set
+    ini_set "$file" "ServerSettings" "RestrictAvatarSummoningTime" "False"
+    ini_set "$file" "ServerSettings" "AvatarSummoningTimeWeekdayStart" "0"
+    ini_set "$file" "ServerSettings" "AvatarSummoningTimeWeekdayEnd" "0"
+    ini_set "$file" "ServerSettings" "AvatarSummoningTimeWeekendStart" "0"
+    ini_set "$file" "ServerSettings" "AvatarSummoningTimeWeekendEnd" "0"
     return 0
   fi
   require_nonempty AVATAR_SUMMONING_DAYS "$days"
@@ -251,32 +257,24 @@ ini_set "$settings_ini" "ServerSettings" "CraftingCostMultiplier" "${CRAFTING_CO
 ini_set "$settings_ini" "ServerSettings" "FuelBurnTimeMultiplier" "${FUEL_BURN_TIME_MULTIPLIER:-1.0}"
 ini_set "$settings_ini" "ServerSettings" "ItemSpoilRateScale" "${ITEM_SPOIL_RATE_SCALE:-1.0}"
 
-if truthy "${PVP_ENABLED:-true}"; then
-  # PvP is enabled, apply PvP time restrictions if configured
-  if [[ -n "${PVP_TIME_DAYS:-}" && -n "${PVP_TIME_START:-}" && -n "${PVP_TIME_END:-}" ]]; then
-    apply_weekly_schedule "$settings_ini" "PVP_TIME" "PvP" "RestrictPVPTime" "PVPEnabled" "PVPTime"
-  else
-    reset_weekly_schedule "$settings_ini" "RestrictPVPTime" "PVPEnabled" "PVPTime"
-  fi
+# PvP schedule configuration (respected regardless of PVP_ENABLED for PvE with PvP times)
+if [[ -n "${PVP_TIME_DAYS:-}" && -n "${PVP_TIME_START:-}" && -n "${PVP_TIME_END:-}" ]]; then
+  apply_weekly_schedule "$settings_ini" "PVP_TIME" "PvP" "RestrictPVPTime" "PVPEnabled" "PVPTime"
+else
+  reset_weekly_schedule "$settings_ini" "RestrictPVPTime" "PVPEnabled" "PVPTime"
+fi
 
-  # Apply Building Damage (Raid) schedule if building damage is enabled
-  if truthy "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}" || [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" ]]; then
-    if [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" && -n "${PVP_BUILDING_DAMAGE_START:-}" && -n "${PVP_BUILDING_DAMAGE_END:-}" ]]; then
-      apply_weekly_schedule "$settings_ini" "PVP_BUILDING_DAMAGE" "Building damage" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
-      ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "True"
-    else
-      reset_weekly_schedule "$settings_ini" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
-      ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "$(bool_ini "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}")"
-    fi
+# Building damage (Raid) schedule configuration (respected regardless of PVP_ENABLED for PvE with scheduled raid times)
+if [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" && -n "${PVP_BUILDING_DAMAGE_START:-}" && -n "${PVP_BUILDING_DAMAGE_END:-}" ]]; then
+  apply_weekly_schedule "$settings_ini" "PVP_BUILDING_DAMAGE" "Building damage" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
+  ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "True"
+else
+  reset_weekly_schedule "$settings_ini" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
+  if truthy "${PVP_ENABLED:-true}" && truthy "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}"; then
+    ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "True"
   else
-    reset_weekly_schedule "$settings_ini" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
     ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "False"
   fi
-else
-  # PvE Server: Disable and reset everything PvP-related
-  reset_weekly_schedule "$settings_ini" "RestrictPVPTime" "PVPEnabled" "PVPTime"
-  reset_weekly_schedule "$settings_ini" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
-  ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "False"
 fi
 apply_avatar_schedule "$settings_ini"
 apply_server_setting_overrides "$settings_ini" "$SERVER_SETTINGS_KEYS_FILE"

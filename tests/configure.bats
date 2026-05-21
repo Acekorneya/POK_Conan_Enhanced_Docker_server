@@ -118,14 +118,17 @@ setup() {
   [[ "$output" != *"rcon"* ]]
 }
 
-@test "configure-server resets PvP and Raid schedules when PVP_ENABLED is false" {
+@test "configure-server resets PvP and Raid schedules when PVP_ENABLED is false and schedules are empty" {
   export PVP_ENABLED=false
-  export PVP_TIME_DAYS=weekends
-  export PVP_TIME_START=18:00
-  export PVP_TIME_END=22:00
-  export PVP_BUILDING_DAMAGE_DAYS=weekends
-  export PVP_BUILDING_DAMAGE_START=18:00
-  export PVP_BUILDING_DAMAGE_END=22:00
+  unset PVP_TIME_DAYS
+  unset PVP_TIME_START
+  unset PVP_TIME_END
+  unset PVP_BUILDING_DAMAGE_DAYS
+  unset PVP_BUILDING_DAMAGE_START
+  unset PVP_BUILDING_DAMAGE_END
+  unset AVATAR_SUMMONING_DAYS
+  unset AVATAR_SUMMONING_START
+  unset AVATAR_SUMMONING_END
   
   run scripts/configure-server.sh
   [ "$status" -eq 0 ]
@@ -145,4 +148,43 @@ setup() {
   # Ensure enabled days are False
   grep -q '^PVPEnabledSaturday=False$' "$cfg"
   grep -q '^PVPBuildingDamageEnabledSaturday=False$' "$cfg"
+
+  # Ensure Avatar summoning is reset
+  grep -q '^RestrictAvatarSummoningTime=False$' "$cfg"
+  grep -q '^AvatarSummoningTimeWeekdayStart=0$' "$cfg"
+  grep -q '^AvatarSummoningTimeWeekdayEnd=0$' "$cfg"
+  grep -q '^AvatarSummoningTimeWeekendStart=0$' "$cfg"
+  grep -q '^AvatarSummoningTimeWeekendEnd=0$' "$cfg"
+}
+
+@test "configure-server respects PvP and Raid schedules on PvE server when PVP_ENABLED is false but schedules are set" {
+  export PVP_ENABLED=false
+  export TZ=UTC
+  export PVP_TIME_DAYS=weekends
+  export PVP_TIME_START=18:00
+  export PVP_TIME_END=22:00
+  export PVP_BUILDING_DAMAGE_DAYS=weekends
+  export PVP_BUILDING_DAMAGE_START=18:00
+  export PVP_BUILDING_DAMAGE_END=22:00
+  
+  run scripts/configure-server.sh
+  [ "$status" -eq 0 ]
+  cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer/ServerSettings.ini"
+  
+  grep -q '^PVPEnabled=False$' "$cfg"
+  grep -q '^RestrictPVPTime=True$' "$cfg"
+  grep -q '^RestrictPVPBuildingDamageTime=True$' "$cfg"
+  grep -q '^CanDamagePlayerOwnedStructures=True$' "$cfg"
+  
+  # Ensure times are applied correctly
+  grep -q '^PVPTimeSaturdayStart=1800$' "$cfg"
+  grep -q '^PVPTimeSaturdayEnd=2200$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSaturdayStart=1800$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSaturdayEnd=2200$' "$cfg"
+  
+  # Ensure enabled days are True for Saturday/Sunday
+  grep -q '^PVPEnabledSaturday=True$' "$cfg"
+  grep -q '^PVPEnabledSunday=True$' "$cfg"
+  grep -q '^PVPBuildingDamageEnabledSaturday=True$' "$cfg"
+  grep -q '^PVPBuildingDamageEnabledSunday=True$' "$cfg"
 }
