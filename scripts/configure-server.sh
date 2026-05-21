@@ -154,6 +154,9 @@ log_effective_server_settings() {
   log_info "Schedules: PvP=$(schedule_summary PVP_TIME) BuildingDamage=$(schedule_summary PVP_BUILDING_DAMAGE) AvatarSummoning=$(schedule_summary AVATAR_SUMMONING)"
 }
 
+# Support both ENABLE_BATTLEYE and enable_battleye (case-insensitive env var fallback)
+ENABLE_BATTLEYE="${ENABLE_BATTLEYE:-${enable_battleye:-true}}"
+
 require_nonempty ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
 reject_placeholder ADMIN_PASSWORD "${ADMIN_PASSWORD:-}" change-me admin password
 if truthy "${RCON_ENABLED:-true}"; then
@@ -204,7 +207,7 @@ ini_set "$settings_ini" "ServerSettings" "PVPEnabled" "${PVP_ENABLED:-true}"
 ini_set "$settings_ini" "ServerSettings" "ServerCommunity" "${COMMUNITY:-0}"
 ini_set "$settings_ini" "ServerSettings" "serverRegion" "${SERVER_REGION:-0}"
 ini_set "$settings_ini" "ServerSettings" "serverVoiceChat" "${SERVER_VOICE_CHAT:-0}"
-ini_set "$settings_ini" "ServerSettings" "BattlEyeEnabled" "${ENABLE_BATTLEYE:-true}"
+ini_set "$settings_ini" "ServerSettings" "IsBattlEyeEnabled" "$(bool_ini "${ENABLE_BATTLEYE:-true}")"
 ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}"
 ini_set "$settings_ini" "ServerSettings" "clanMaxSize" "${CLAN_MAX_SIZE:-10}"
 ini_set "$settings_ini" "ServerSettings" "AllowBuildingAnywhere" "${ALLOW_BUILDING_ANYWHERE:-false}"

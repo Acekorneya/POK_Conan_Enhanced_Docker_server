@@ -13,7 +13,6 @@ AvatarSummoningTimeWeekdayStart
 AvatarSummoningTimeWeekendEnd
 AvatarSummoningTimeWeekendStart
 AvatarsDisabled
-BattlEyeEnabled
 BlueprintConfigVersion
 BuildFromStorageRadius
 BuildingAbandonmentEnabled

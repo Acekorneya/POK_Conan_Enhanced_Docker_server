@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 truthy() {
-  case "${1:-}" in
-    1|true|TRUE|yes|YES|y|Y|on|ON) return 0 ;;
+  local val="${1:-}"
+  case "${val,,}" in
+    1|true|yes|y|on) return 0 ;;
     *) return 1 ;;
   esac
 }

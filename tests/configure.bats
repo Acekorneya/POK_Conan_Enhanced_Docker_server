@@ -26,6 +26,24 @@ setup() {
   grep -q '^DropBackpackOnDeath=1$' "$cfg/ServerSettings.ini"
   grep -q '^EverybodyCanLootCorpse=true$' "$cfg/ServerSettings.ini"
   grep -q '^ThrallConversionMultiplier=0.5$' "$cfg/ServerSettings.ini"
+  grep -q '^IsBattlEyeEnabled=True$' "$cfg/ServerSettings.ini"
+}
+
+@test "configure-server configures BattlEye correctly when disabled" {
+  export ENABLE_BATTLEYE=False
+  run scripts/configure-server.sh
+  [ "$status" -eq 0 ]
+  cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer"
+  grep -q '^IsBattlEyeEnabled=False$' "$cfg/ServerSettings.ini"
+}
+
+@test "configure-server configures BattlEye correctly when lowercase enable_battleye is disabled" {
+  unset ENABLE_BATTLEYE
+  export enable_battleye=False
+  run scripts/configure-server.sh
+  [ "$status" -eq 0 ]
+  cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer"
+  grep -q '^IsBattlEyeEnabled=False$' "$cfg/ServerSettings.ini"
 }
 
 @test "configure-server requires admin password" {
