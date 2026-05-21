@@ -143,15 +143,12 @@ TZ=America/Los_Angeles
 PVP_BUILDING_DAMAGE_DAYS=weekends
 PVP_BUILDING_DAMAGE_START=11:00
 PVP_BUILDING_DAMAGE_END=23:00
-RAID_BROADCASTS_ENABLED=true
 AVATAR_SUMMONING_DAYS=weekends
 AVATAR_SUMMONING_START=11:00
 AVATAR_SUMMONING_END=23:00
 ```
 
 Days accept `Monday` through `Sunday` plus shortcuts: `weekdays`, `weekends`, and `all`.
-
-When `RAID_BROADCASTS_ENABLED=true`, the container sends raid-window warnings 1 hour, 30 minutes, and 5 minutes before the building damage window starts and ends, plus start/end notices.
 
 ## Backups
 
@@ -193,16 +190,15 @@ docker compose exec conan rcon help
 docker compose exec conan rcon listplayers
 ```
 
-## Scheduled Broadcasts
+## Message of the Day
 
-Set an optional repeating message in `.env` to promote Discord or send any recurring admin notice:
+Set a message of the day in `.env` to be shown to players when they join the server:
 
 ```env
-SERVER_BROADCAST_MESSAGE=Join our Discord: https://discord.gg/example
-SERVER_BROADCAST_INTERVAL_MINUTES=120
+SERVER_MESSAGE_OF_THE_DAY=Join our Discord: https://discord.gg/example
 ```
 
-Leave `SERVER_BROADCAST_MESSAGE` blank to disable scheduled broadcasts. The first message is sent after one full interval, then repeats on the same interval.
+Leave `SERVER_MESSAGE_OF_THE_DAY` blank to disable the message of the day.
 
 ## Tests
 

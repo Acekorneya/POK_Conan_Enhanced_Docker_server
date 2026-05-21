@@ -170,6 +170,7 @@ fi
 
 log_section "Conan Configuration"
 log_info "Server name: ${SERVER_NAME:-Conan Exiles Enhanced Server}"
+log_info "Message of the Day: ${SERVER_MESSAGE_OF_THE_DAY:-none}"
 log_info "Max players: ${MAX_PLAYERS:-40}"
 log_info "Join password: $(password_state "${SERVER_PASSWORD:-}")"
 log_info "Admin password: $(secret_state "${ADMIN_PASSWORD:-}")"
@@ -197,6 +198,7 @@ ini_set "$game_ini" "RconPlugin" "RconPort" "${RCON_PORT:-25575}"
 
 ini_set "$settings_ini" "ServerSettings" "AdminPassword" "${ADMIN_PASSWORD:-}"
 ini_set "$settings_ini" "ServerSettings" "ServerPassword" "${SERVER_PASSWORD:-}"
+ini_set "$settings_ini" "ServerSettings" "ServerMessageOfTheDay" "${SERVER_MESSAGE_OF_THE_DAY:-}"
 ini_set "$settings_ini" "ServerSettings" "MaxPlayers" "${MAX_PLAYERS:-40}"
 ini_set "$settings_ini" "ServerSettings" "PVPEnabled" "${PVP_ENABLED:-true}"
 ini_set "$settings_ini" "ServerSettings" "ServerCommunity" "${COMMUNITY:-0}"

@@ -13,8 +13,6 @@ server_pid=""
 backup_pid=""
 update_pid=""
 watchdog_pid=""
-broadcast_pid=""
-raid_broadcast_pid=""
 update_request_file="${TMPDIR:-/tmp}/conan-update-request.$$"
 update_active_file="${TMPDIR:-/tmp}/conan-update-active.$$"
 watchdog_request_file="${TMPDIR:-/tmp}/conan-watchdog-request.$$"
@@ -175,205 +173,6 @@ stop_periodic_backups() {
     kill "$backup_pid" 2>/dev/null || true
     wait "$backup_pid" 2>/dev/null || true
     backup_pid=""
-  fi
-}
-
-run_scheduled_broadcasts() {
-  local message="${SERVER_BROADCAST_MESSAGE:-}"
-  local interval_minutes="${SERVER_BROADCAST_INTERVAL_MINUTES:-120}"
-  local interval_seconds="${1:-}"
-
-  [[ -n "$message" ]] || return 0
-  require_positive_uint SERVER_BROADCAST_INTERVAL_MINUTES "$interval_minutes" || return 1
-  if [[ -z "$interval_seconds" ]]; then
-    interval_seconds=$(( interval_minutes * 60 ))
-  else
-    require_positive_uint SERVER_BROADCAST_INTERVAL_SECONDS "$interval_seconds" || return 1
-  fi
-
-  log_info "Scheduled broadcasts enabled: every ${interval_minutes} minute(s)"
-  while true; do
-    sleep "$interval_seconds"
-    rcon_broadcast "$message"
-  done
-}
-
-start_scheduled_broadcasts() {
-  if [[ -z "${SERVER_BROADCAST_MESSAGE:-}" ]]; then
-    log_info "Scheduled broadcasts disabled because SERVER_BROADCAST_MESSAGE is blank"
-    return 0
-  fi
-  if ! truthy "${RCON_ENABLED:-true}" || [[ -z "${RCON_PASSWORD:-}" ]]; then
-    log_warn "Scheduled broadcasts disabled because RCON is disabled or RCON_PASSWORD is not set"
-    return 0
-  fi
-
-  require_positive_uint SERVER_BROADCAST_INTERVAL_MINUTES "${SERVER_BROADCAST_INTERVAL_MINUTES:-120}" || return 1
-  run_scheduled_broadcasts "" &
-  broadcast_pid="$!"
-}
-
-stop_scheduled_broadcasts() {
-  if [[ -n "$broadcast_pid" ]]; then
-    kill "$broadcast_pid" 2>/dev/null || true
-    wait "$broadcast_pid" 2>/dev/null || true
-    broadcast_pid=""
-  fi
-}
-
-raid_schedule_complete() {
-  [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" && -n "${PVP_BUILDING_DAMAGE_START:-}" && -n "${PVP_BUILDING_DAMAGE_END:-}" ]]
-}
-
-raid_schedule_any_set() {
-  [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" || -n "${PVP_BUILDING_DAMAGE_START:-}" || -n "${PVP_BUILDING_DAMAGE_END:-}" ]]
-}
-
-raid_day_matches() {
-  local target="$1"
-  local expanded_days="$2"
-  local day
-  while IFS= read -r day; do
-    [[ -n "$day" ]] || continue
-    if [[ "$day" == "$target" ]]; then
-      return 0
-    fi
-  done <<< "$expanded_days"
-  return 1
-}
-
-raid_emit_event() {
-  local epoch="$1"
-  local message="$2"
-  printf '%s|%s\n' "$epoch" "$message"
-}
-
-raid_event_candidates() {
-  local from_epoch="$1"
-  local to_epoch="$2"
-  local timezone="${TZ:-UTC}"
-  local days="${PVP_BUILDING_DAMAGE_DAYS:-}"
-  local start="${PVP_BUILDING_DAMAGE_START:-}"
-  local end="${PVP_BUILDING_DAMAGE_END:-}"
-  local start_minutes end_minutes expanded_days base_date offset local_midnight local_date day_name
-  local start_norm end_norm end_date start_epoch end_epoch event_epoch
-
-  require_nonempty PVP_BUILDING_DAMAGE_DAYS "$days" || return 1
-  require_nonempty PVP_BUILDING_DAMAGE_START "$start" || return 1
-  require_nonempty PVP_BUILDING_DAMAGE_END "$end" || return 1
-  start_minutes="$(time_to_minutes "$start")"
-  end_minutes="$(time_to_minutes "$end")"
-  start_norm="$(normalize_time_for_date "$start")"
-  end_norm="$(normalize_time_for_date "$end")"
-  expanded_days="$(expand_day_tokens "$days")"
-
-  base_date="$(TZ="$timezone" date -d "@$(( from_epoch - 2 * 86400 ))" '+%F')"
-  for offset in {0..14}; do
-    local_midnight="$(TZ="$timezone" date -d "$base_date + $offset days" '+%s')"
-    local_date="$(TZ="$timezone" date -d "@$local_midnight" '+%F')"
-    day_name="$(TZ="$timezone" date -d "@$local_midnight" '+%A')"
-    raid_day_matches "$day_name" "$expanded_days" || continue
-
-    start_epoch="$(TZ="$timezone" date -d "$local_date $start_norm" '+%s')"
-    if (( end_minutes <= start_minutes )); then
-      end_date="$(TZ="$timezone" date -d "$local_date + 1 day" '+%F')"
-    else
-      end_date="$local_date"
-    fi
-    end_epoch="$(TZ="$timezone" date -d "$end_date $end_norm" '+%s')"
-
-    raid_emit_event "$(( start_epoch - 3600 ))" "Raid time starts in 1 hour."
-    raid_emit_event "$(( start_epoch - 1800 ))" "Raid time starts in 30 minutes."
-    raid_emit_event "$(( start_epoch - 300 ))" "Raid time starts in 5 minutes."
-    raid_emit_event "$start_epoch" "Raid time has started."
-
-    for event_epoch in "$(( end_epoch - 3600 ))" "$(( end_epoch - 1800 ))" "$(( end_epoch - 300 ))"; do
-      if (( event_epoch > start_epoch )); then
-        case "$(( end_epoch - event_epoch ))" in
-          3600) raid_emit_event "$event_epoch" "Raid time ends in 1 hour." ;;
-          1800) raid_emit_event "$event_epoch" "Raid time ends in 30 minutes." ;;
-          300) raid_emit_event "$event_epoch" "Raid time ends in 5 minutes." ;;
-        esac
-      fi
-    done
-    raid_emit_event "$end_epoch" "Raid time has ended."
-  done | sort -n -u
-
-  # Keep shellcheck aware both bounds are intentionally part of this helper contract.
-  [[ -n "$to_epoch" ]]
-}
-
-raid_due_broadcasts() {
-  local from_epoch="$1"
-  local to_epoch="$2"
-  local line event_epoch message
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    event_epoch="${line%%|*}"
-    message="${line#*|}"
-    if (( event_epoch > from_epoch && event_epoch <= to_epoch )); then
-      printf '%s\n' "$message"
-    fi
-  done < <(raid_event_candidates "$from_epoch" "$to_epoch")
-}
-
-broadcast_due_raid_events() {
-  local from_epoch="$1"
-  local to_epoch="$2"
-  local message
-  while IFS= read -r message; do
-    [[ -n "$message" ]] || continue
-    rcon_broadcast "$message"
-  done < <(raid_due_broadcasts "$from_epoch" "$to_epoch")
-}
-
-run_raid_broadcasts() {
-  local interval="${RAID_BROADCAST_CHECK_INTERVAL_SECONDS:-30}"
-  local last_check now
-
-  require_positive_uint RAID_BROADCAST_CHECK_INTERVAL_SECONDS "$interval" || return 1
-  log_info "Raid broadcasts enabled for building damage window: ${PVP_BUILDING_DAMAGE_DAYS} ${PVP_BUILDING_DAMAGE_START}-${PVP_BUILDING_DAMAGE_END} ${TZ:-UTC}"
-  last_check="$(date +%s)"
-  while true; do
-    sleep "$interval"
-    now="$(date +%s)"
-    broadcast_due_raid_events "$last_check" "$now"
-    last_check="$now"
-  done
-}
-
-start_raid_broadcasts() {
-  if ! truthy "${RAID_BROADCASTS_ENABLED:-true}"; then
-    log_info "Raid broadcasts disabled because RAID_BROADCASTS_ENABLED=false"
-    return 0
-  fi
-  if ! raid_schedule_complete; then
-    if raid_schedule_any_set; then
-      log_warn "Raid broadcasts disabled because PVP_BUILDING_DAMAGE schedule is incomplete"
-    else
-      log_info "Raid broadcasts disabled because PVP_BUILDING_DAMAGE schedule is blank"
-    fi
-    return 0
-  fi
-  if ! truthy "${RCON_ENABLED:-true}" || [[ -z "${RCON_PASSWORD:-}" ]]; then
-    log_warn "Raid broadcasts disabled because RCON is disabled or RCON_PASSWORD is not set"
-    return 0
-  fi
-
-  require_positive_uint RAID_BROADCAST_CHECK_INTERVAL_SECONDS "${RAID_BROADCAST_CHECK_INTERVAL_SECONDS:-30}" || return 1
-  time_to_minutes "${PVP_BUILDING_DAMAGE_START:-}" >/dev/null
-  time_to_minutes "${PVP_BUILDING_DAMAGE_END:-}" >/dev/null
-  expand_day_tokens "${PVP_BUILDING_DAMAGE_DAYS:-}" >/dev/null
-
-  run_raid_broadcasts &
-  raid_broadcast_pid="$!"
-}
-
-stop_raid_broadcasts() {
-  if [[ -n "$raid_broadcast_pid" ]]; then
-    kill "$raid_broadcast_pid" 2>/dev/null || true
-    wait "$raid_broadcast_pid" 2>/dev/null || true
-    raid_broadcast_pid=""
   fi
 }
 
@@ -642,8 +441,6 @@ stop_watchdog_monitor() {
 }
 
 cleanup_runtime() {
-  stop_raid_broadcasts
-  stop_scheduled_broadcasts
   stop_watchdog_monitor
   stop_update_monitor
   stop_periodic_backups
@@ -656,8 +453,6 @@ handle_signal() {
   fi
   shutdown_requested=true
   log_info "Received stop signal"
-  stop_raid_broadcasts
-  stop_scheduled_broadcasts
   stop_watchdog_monitor
   stop_update_monitor
   graceful_stop_server stop "Server shutting down, saving world." || {
@@ -688,20 +483,12 @@ main() {
       verify_after_launch=false
     fi
 
-    start_scheduled_broadcasts
-    start_raid_broadcasts
     start_update_monitor
     start_watchdog_monitor
     watchdog_extra_grace_seconds=0
     restart_requested=false
     restart_reason=""
     while server_running "$server_pid"; do
-      if [[ -f "$update_active_file" && -n "$broadcast_pid" ]]; then
-        stop_scheduled_broadcasts
-      fi
-      if [[ -f "$update_active_file" && -n "$raid_broadcast_pid" ]]; then
-        stop_raid_broadcasts
-      fi
       if [[ -f "$update_request_file" ]]; then
         restart_requested=true
         restart_reason="update"
@@ -716,8 +503,6 @@ main() {
     done
 
     if [[ "$restart_requested" == true ]]; then
-      stop_raid_broadcasts
-      stop_scheduled_broadcasts
       stop_watchdog_monitor
       stop_update_monitor
       if [[ "$restart_reason" == "watchdog" ]]; then

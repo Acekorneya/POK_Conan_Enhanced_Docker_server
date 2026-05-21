@@ -2,21 +2,23 @@
 
 setup() {
   export SERVER_DIR="$BATS_TEST_TMPDIR/server"
-  export ADMIN_PASSWORD=admin
-  export RCON_PASSWORD=rcon
+  export ADMIN_PASSWORD=admin-ok
+  export RCON_PASSWORD=rcon-ok
   export SERVER_NAME="Test Server"
   export SERVER_PASSWORD=""
   mkdir -p "$SERVER_DIR"
 }
 
 @test "configure-server renders key config files" {
+  export SERVER_MESSAGE_OF_THE_DAY="Welcome to our server"
   run scripts/configure-server.sh
   [ "$status" -eq 0 ]
   cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer"
   grep -q '^ServerName=Test Server$' "$cfg/Engine.ini"
   grep -q '^RconEnabled=1$' "$cfg/Game.ini"
-  grep -q '^RconPassword=rcon$' "$cfg/Game.ini"
-  grep -q '^AdminPassword=admin$' "$cfg/ServerSettings.ini"
+  grep -q '^RconPassword=rcon-ok$' "$cfg/Game.ini"
+  grep -q '^AdminPassword=admin-ok$' "$cfg/ServerSettings.ini"
+  grep -q '^ServerMessageOfTheDay=Welcome to our server$' "$cfg/ServerSettings.ini"
   grep -q '^ServerCommunity=0$' "$cfg/ServerSettings.ini"
   grep -q '^serverRegion=0$' "$cfg/ServerSettings.ini"
   grep -q '^serverVoiceChat=0$' "$cfg/ServerSettings.ini"
