@@ -13,9 +13,11 @@ server_pid=""
 backup_pid=""
 update_pid=""
 watchdog_pid=""
+daily_restart_pid=""
 update_request_file="${TMPDIR:-/tmp}/conan-update-request.$$"
 update_active_file="${TMPDIR:-/tmp}/conan-update-active.$$"
 watchdog_request_file="${TMPDIR:-/tmp}/conan-watchdog-request.$$"
+daily_restart_request_file="${TMPDIR:-/tmp}/conan-daily-restart-request.$$"
 shutdown_requested=false
 launcher=()
 args=()
@@ -440,11 +442,150 @@ stop_watchdog_monitor() {
   fi
 }
 
+daily_restart_epoch_on_date() {
+  local timezone="$1"
+  local local_date="$2"
+  local restart_time="$3"
+  local base_minutes candidate_minutes day_offset minute_of_day hour minute candidate_date candidate_time epoch
+
+  base_minutes="$(time_to_minutes "$restart_time")" || return 1
+  for (( candidate_minutes = base_minutes; candidate_minutes < base_minutes + 180; candidate_minutes++ )); do
+    day_offset=$(( candidate_minutes / 1440 ))
+    minute_of_day=$(( candidate_minutes % 1440 ))
+    hour=$(( minute_of_day / 60 ))
+    minute=$(( minute_of_day % 60 ))
+    candidate_date="$(TZ="$timezone" date -d "$local_date + $day_offset day" '+%F')"
+    printf -v candidate_time '%02d:%02d' "$hour" "$minute"
+    if epoch="$(TZ="$timezone" date -d "$candidate_date $candidate_time" '+%s' 2>/dev/null)"; then
+      printf '%s\n' "$epoch"
+      return 0
+    fi
+  done
+
+  log_error "Could not resolve DAILY_RESTART_TIME=$restart_time for $local_date in $timezone"
+  return 1
+}
+
+next_daily_restart_epoch() {
+  local now_epoch="${1:-$(date +%s)}"
+  local timezone="${TZ:-UTC}"
+  local normalized_time today_date tomorrow_date restart_epoch
+
+  normalized_time="$(normalize_time_for_date "${DAILY_RESTART_TIME:-02:00}")" || return 1
+  today_date="$(TZ="$timezone" date -d "@$now_epoch" '+%F')"
+  restart_epoch="$(daily_restart_epoch_on_date "$timezone" "$today_date" "$normalized_time")" || return 1
+  if (( now_epoch < restart_epoch )); then
+    printf '%s\n' "$restart_epoch"
+    return 0
+  fi
+
+  tomorrow_date="$(TZ="$timezone" date -d "$today_date + 1 day" '+%F')"
+  daily_restart_epoch_on_date "$timezone" "$tomorrow_date" "$normalized_time"
+}
+
+run_daily_restart_monitor() {
+  local current_time notice notice_seconds target_restart_epoch sleep_seconds
+
+  notice="${AUTO_UPDATE_RESTART_NOTICE_MINUTES:-30}"
+  require_positive_uint AUTO_UPDATE_RESTART_NOTICE_MINUTES "$notice" || return 1
+  notice_seconds=$(( notice * 60 ))
+  normalize_time_for_date "${DAILY_RESTART_TIME:-02:00}" >/dev/null || return 1
+
+  while true; do
+    current_time="$(date +%s)"
+    target_restart_epoch="$(next_daily_restart_epoch "$current_time")" || return 1
+
+    local warning_start_epoch=$(( target_restart_epoch - notice_seconds ))
+    if (( current_time < warning_start_epoch )); then
+      sleep_seconds=$(( warning_start_epoch - current_time ))
+      log_info "Daily restart monitor: sleeping for ${sleep_seconds}s until warning window starts"
+      sleep "$sleep_seconds"
+    fi
+
+    # Warning window has started or was active at startup
+    if conan_processes_running; then
+      if [[ -f "$update_active_file" || -f "$update_request_file" ]]; then
+        log_info "Daily restart skipped because an update restart is already active"
+        sleep 60
+        continue
+      fi
+
+      local remaining_seconds=$(( target_restart_epoch - $(date +%s) ))
+      local marks=()
+      local mark i sleep_time
+      mapfile -t marks < <(countdown_marks_seconds "$notice")
+
+      log_section "Daily Restart Warning"
+      log_info "Next daily restart at $(TZ="${TZ:-UTC}" date -d "@$target_restart_epoch" '+%F %T %Z') (in ${remaining_seconds}s)"
+
+      for (( i = 0; i < ${#marks[@]}; i++ )); do
+        mark="${marks[$i]}"
+        if (( mark > remaining_seconds )); then
+          continue
+        fi
+        if (( remaining_seconds > mark )); then
+          sleep_time=$(( remaining_seconds - mark ))
+          sleep "$sleep_time"
+          remaining_seconds="$mark"
+        fi
+        local label
+        label="$(countdown_label "$mark")"
+        rcon_broadcast "Daily server restart scheduled. Restart in $label."
+      done
+
+      remaining_seconds=$(( target_restart_epoch - $(date +%s) ))
+      if (( remaining_seconds > 0 )); then
+        sleep "$remaining_seconds"
+      fi
+      rcon_broadcast "Restarting server now for daily maintenance."
+
+      # Trigger restart
+      printf 'time=%s\n' "$(date +%s)" > "$daily_restart_request_file"
+      return 0
+    else
+      # Server is not running, sleep a bit and check again
+      sleep 10
+    fi
+  done
+}
+
+start_daily_restart_monitor() {
+  if ! truthy "${DAILY_RESTART_ENABLED:-false}"; then
+    log_info "Daily restart monitor disabled"
+    return 0
+  fi
+
+  if ! truthy "${RCON_ENABLED:-true}" || [[ -z "${RCON_PASSWORD:-}" ]]; then
+    log_error "Daily restarts require RCON to be enabled and RCON_PASSWORD to be set"
+    exit 1
+  fi
+
+  # Validate restart time format
+  time_to_minutes "${DAILY_RESTART_TIME:-02:00}" >/dev/null || {
+    log_error "Invalid DAILY_RESTART_TIME: ${DAILY_RESTART_TIME:-}"
+    exit 1
+  }
+  require_positive_uint AUTO_UPDATE_RESTART_NOTICE_MINUTES "${AUTO_UPDATE_RESTART_NOTICE_MINUTES:-30}" || exit 1
+
+  log_info "Daily restart monitor enabled: time=${DAILY_RESTART_TIME:-02:00} in TZ=${TZ:-UTC}"
+  run_daily_restart_monitor &
+  daily_restart_pid="$!"
+}
+
+stop_daily_restart_monitor() {
+  if [[ -n "$daily_restart_pid" ]]; then
+    kill "$daily_restart_pid" 2>/dev/null || true
+    wait "$daily_restart_pid" 2>/dev/null || true
+    daily_restart_pid=""
+  fi
+}
+
 cleanup_runtime() {
   stop_watchdog_monitor
   stop_update_monitor
+  stop_daily_restart_monitor
   stop_periodic_backups
-  rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
+  rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file" "$daily_restart_request_file"
 }
 
 handle_signal() {
@@ -455,13 +596,14 @@ handle_signal() {
   log_info "Received stop signal"
   stop_watchdog_monitor
   stop_update_monitor
+  stop_daily_restart_monitor
   graceful_stop_server stop "Server shutting down, saving world." || {
     stop_periodic_backups
-    rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
+    rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file" "$daily_restart_request_file"
     exit 1
   }
   stop_periodic_backups
-  rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
+  rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file" "$daily_restart_request_file"
   exit 0
 }
 
@@ -471,7 +613,7 @@ main() {
   trap handle_signal TERM INT
 
   while true; do
-    rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file"
+    rm -f "$update_request_file" "$update_active_file" "$watchdog_request_file" "$daily_restart_request_file"
     run_startup_tasks
     launch_server "$@"
 
@@ -485,6 +627,7 @@ main() {
 
     start_update_monitor
     start_watchdog_monitor
+    start_daily_restart_monitor
     watchdog_extra_grace_seconds=0
     restart_requested=false
     restart_reason=""
@@ -499,12 +642,18 @@ main() {
         restart_reason="watchdog"
         break
       fi
+      if [[ -f "$daily_restart_request_file" ]]; then
+        restart_requested=true
+        restart_reason="daily_restart"
+        break
+      fi
       sleep 2
     done
 
     if [[ "$restart_requested" == true ]]; then
       stop_watchdog_monitor
       stop_update_monitor
+      stop_daily_restart_monitor
       if [[ "$restart_reason" == "watchdog" ]]; then
         watchdog_restart_count=$(( watchdog_restart_count + 1 ))
         max_watchdog_restarts="${SERVER_WATCHDOG_MAX_RESTARTS:-3}"
@@ -527,6 +676,14 @@ main() {
         stop_periodic_backups
         verify_after_launch=true
         watchdog_extra_grace_seconds="${SERVER_WATCHDOG_RESTART_COOLDOWN_SECONDS:-300}"
+      elif [[ "$restart_reason" == "daily_restart" ]]; then
+        if ! graceful_stop_server daily_restart ""; then
+          log_error "Daily restart could not fully stop the old Conan process; exiting for Docker restart policy"
+          stop_periodic_backups
+          exit 1
+        fi
+        stop_periodic_backups
+        verify_after_launch=true
       else
         if ! graceful_stop_server update ""; then
           log_error "Update restart could not fully stop the old Conan process; exiting for Docker restart policy"

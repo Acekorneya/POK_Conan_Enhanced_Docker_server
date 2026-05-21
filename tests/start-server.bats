@@ -143,3 +143,79 @@ SH
   [ "$status" -ne 0 ]
   [[ "$output" == *"did not stop after SIGTERM"* ]]
 }
+
+@test "disabled daily restart does not start a monitor" {
+  run bash -c '
+    set -euo pipefail
+    export DAILY_RESTART_ENABLED=false
+    source scripts/start-server.sh
+    start_daily_restart_monitor
+    [[ -z "${daily_restart_pid:-}" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "countdown writes a daily restart request after warnings" {
+  run bash -c '
+    set -euo pipefail
+    export DAILY_RESTART_ENABLED=true
+    export DAILY_RESTART_TIME="02:00"
+    export TZ=UTC
+    export AUTO_UPDATE_RESTART_NOTICE_MINUTES=1
+    export RCON_ENABLED=true
+    export RCON_PASSWORD=secret
+    source scripts/start-server.sh
+
+    # Mock sleep to do nothing so test finishes instantly
+    sleep() { :; }
+    export -f sleep
+
+    # Mock rcon_broadcast
+    rcon_broadcast() { echo "Mock broadcast: $*"; }
+    export -f rcon_broadcast
+
+    # Mock conan_processes_running to return true
+    conan_processes_running() { return 0; }
+    export -f conan_processes_running
+
+    daily_restart_request_file="$BATS_TEST_TMPDIR/daily-request"
+    run_daily_restart_monitor
+
+    test -f "$daily_restart_request_file"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Daily server restart scheduled. Restart in"* ]]
+  [[ "$output" == *"Restarting server now for daily maintenance."* ]]
+}
+
+@test "main loop recognizes daily restart reason" {
+  run bash -c '
+    set -euo pipefail
+
+    source scripts/start-server.sh
+
+    # Mock dependencies
+    run_startup_tasks() { :; }
+    launch_server() { server_pid=999999; }
+    start_update_monitor() { :; }
+    start_watchdog_monitor() { :; }
+    run_periodic_backups() { :; }
+    server_running() { return 0; }
+    stop_watchdog_monitor() { :; }
+    stop_update_monitor() { :; }
+    stop_daily_restart_monitor() { :; }
+    stop_periodic_backups() { :; }
+
+    graceful_stop_server() {
+      echo "graceful_stop_server called with reason: $1"
+      exit 0
+    }
+
+    daily_restart_request_file="$BATS_TEST_TMPDIR/daily-request"
+    start_daily_restart_monitor() { touch "$daily_restart_request_file"; }
+
+    main
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"graceful_stop_server called with reason: daily_restart"* ]]
+}

@@ -108,6 +108,19 @@ SERVER_STOP_GRACE_SECONDS=10
 
 The watchdog checks that the tracked Conan process is still running. It no longer restarts the game only because RCON misses a reply, which avoids launching a second server while the first one is still alive. After the failure threshold is reached, it uses the same graceful RCON `shutdown` path, verifies that all Conan processes stopped, relaunches the server, and verifies health again. If the old process cannot stop within `SERVER_STOP_GRACE_SECONDS`, or repeated recovery restarts exceed `SERVER_WATCHDOG_MAX_RESTARTS`, the container exits non-zero so Docker's restart policy can recreate it.
 
+## Daily Restarts
+
+You can configure a daily game-server restart that runs inside the container supervisor, uses the configured `TZ` timezone, and gracefully restarts only the Conan server process (not the entire Docker container).
+
+Enable and schedule daily restarts with these variables in `.env`:
+
+```env
+DAILY_RESTART_ENABLED=true
+DAILY_RESTART_TIME=02:00
+```
+
+Daily restarts require RCON to be enabled and configured so that players receive in-game warnings before the restart. The warning countdown duration is controlled by `AUTO_UPDATE_RESTART_NOTICE_MINUTES` (which defaults to 30 minutes). When the scheduled time approaches, the server broadcasts warnings like `Daily server restart scheduled. Restart in 30 minutes.` at the configured countdown marks, performs a graceful RCON `shutdown` and save, terminates the game process, installs any pending updates or mods, and launches the server fresh. If the container starts or restarts inside the warning window, the countdown begins immediately with the remaining time.
+
 ## Local Image Builds
 
 Most users should not build the image locally. Maintainers can build from this repository with:

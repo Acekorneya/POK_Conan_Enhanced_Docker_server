@@ -188,6 +188,18 @@ fi
 require_choice COMMUNITY "${COMMUNITY:-0}" 0 1 2 3 4
 require_choice SERVER_REGION "${SERVER_REGION:-0}" 0 1 2 3 4 5
 require_choice SERVER_VOICE_CHAT "${SERVER_VOICE_CHAT:-0}" 0 1
+
+if truthy "${DAILY_RESTART_ENABLED:-false}"; then
+  if ! truthy "${RCON_ENABLED:-true}" || [[ -z "${RCON_PASSWORD:-}" ]]; then
+    log_error "Daily restarts require RCON to be enabled and RCON_PASSWORD to be set"
+    exit 1
+  fi
+  require_positive_uint AUTO_UPDATE_RESTART_NOTICE_MINUTES "${AUTO_UPDATE_RESTART_NOTICE_MINUTES:-30}" || exit 1
+  time_to_minutes "${DAILY_RESTART_TIME:-02:00}" >/dev/null || {
+    log_error "Invalid DAILY_RESTART_TIME: ${DAILY_RESTART_TIME:-}"
+    exit 1
+  }
+fi
 if [[ ! -f "$SERVER_SETTINGS_KEYS_FILE" ]]; then
   log_error "ServerSettings allowlist not found: $SERVER_SETTINGS_KEYS_FILE"
   exit 1
