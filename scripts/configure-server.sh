@@ -66,6 +66,22 @@ apply_weekly_schedule() {
   done <<< "$expanded_days"
 }
 
+reset_weekly_schedule() {
+  local file="$1"
+  local restrict_key="$2"
+  local enabled_prefix="$3"
+  local time_prefix="$4"
+  local day
+  local all_days=(Monday Tuesday Wednesday Thursday Friday Saturday Sunday)
+
+  ini_set "$file" "ServerSettings" "$restrict_key" "False"
+  for day in "${all_days[@]}"; do
+    ini_set "$file" "ServerSettings" "${enabled_prefix}${day}" "False"
+    ini_set "$file" "ServerSettings" "${time_prefix}${day}Start" "0"
+    ini_set "$file" "ServerSettings" "${time_prefix}${day}End" "0"
+  done
+}
+
 apply_avatar_schedule() {
   local file="$1"
   local days="${AVATAR_SUMMONING_DAYS:-}"
@@ -203,12 +219,12 @@ ini_set "$settings_ini" "ServerSettings" "AdminPassword" "${ADMIN_PASSWORD:-}"
 ini_set "$settings_ini" "ServerSettings" "ServerPassword" "${SERVER_PASSWORD:-}"
 ini_set "$settings_ini" "ServerSettings" "ServerMessageOfTheDay" "${SERVER_MESSAGE_OF_THE_DAY:-}"
 ini_set "$settings_ini" "ServerSettings" "MaxPlayers" "${MAX_PLAYERS:-40}"
-ini_set "$settings_ini" "ServerSettings" "PVPEnabled" "${PVP_ENABLED:-true}"
+ini_set "$settings_ini" "ServerSettings" "PVPEnabled" "$(bool_ini "${PVP_ENABLED:-true}")"
 ini_set "$settings_ini" "ServerSettings" "ServerCommunity" "${COMMUNITY:-0}"
 ini_set "$settings_ini" "ServerSettings" "serverRegion" "${SERVER_REGION:-0}"
 ini_set "$settings_ini" "ServerSettings" "serverVoiceChat" "${SERVER_VOICE_CHAT:-0}"
 ini_set "$settings_ini" "ServerSettings" "IsBattlEyeEnabled" "$(bool_ini "${ENABLE_BATTLEYE:-true}")"
-ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}"
+ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "$(bool_ini "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}")"
 ini_set "$settings_ini" "ServerSettings" "clanMaxSize" "${CLAN_MAX_SIZE:-10}"
 ini_set "$settings_ini" "ServerSettings" "AllowBuildingAnywhere" "${ALLOW_BUILDING_ANYWHERE:-false}"
 ini_set "$settings_ini" "ServerSettings" "BuildingAbandonmentEnabled" "${BUILDING_ABANDONMENT_ENABLED:-true}"
@@ -235,10 +251,32 @@ ini_set "$settings_ini" "ServerSettings" "CraftingCostMultiplier" "${CRAFTING_CO
 ini_set "$settings_ini" "ServerSettings" "FuelBurnTimeMultiplier" "${FUEL_BURN_TIME_MULTIPLIER:-1.0}"
 ini_set "$settings_ini" "ServerSettings" "ItemSpoilRateScale" "${ITEM_SPOIL_RATE_SCALE:-1.0}"
 
-apply_weekly_schedule "$settings_ini" "PVP_TIME" "PvP" "RestrictPVPTime" "PVPEnabled" "PVPTime"
-apply_weekly_schedule "$settings_ini" "PVP_BUILDING_DAMAGE" "Building damage" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
-if [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" ]]; then
-  ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "True"
+if truthy "${PVP_ENABLED:-true}"; then
+  # PvP is enabled, apply PvP time restrictions if configured
+  if [[ -n "${PVP_TIME_DAYS:-}" && -n "${PVP_TIME_START:-}" && -n "${PVP_TIME_END:-}" ]]; then
+    apply_weekly_schedule "$settings_ini" "PVP_TIME" "PvP" "RestrictPVPTime" "PVPEnabled" "PVPTime"
+  else
+    reset_weekly_schedule "$settings_ini" "RestrictPVPTime" "PVPEnabled" "PVPTime"
+  fi
+
+  # Apply Building Damage (Raid) schedule if building damage is enabled
+  if truthy "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}" || [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" ]]; then
+    if [[ -n "${PVP_BUILDING_DAMAGE_DAYS:-}" && -n "${PVP_BUILDING_DAMAGE_START:-}" && -n "${PVP_BUILDING_DAMAGE_END:-}" ]]; then
+      apply_weekly_schedule "$settings_ini" "PVP_BUILDING_DAMAGE" "Building damage" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
+      ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "True"
+    else
+      reset_weekly_schedule "$settings_ini" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
+      ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "$(bool_ini "${CAN_DAMAGE_PLAYER_OWNED_STRUCTURES:-false}")"
+    fi
+  else
+    reset_weekly_schedule "$settings_ini" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
+    ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "False"
+  fi
+else
+  # PvE Server: Disable and reset everything PvP-related
+  reset_weekly_schedule "$settings_ini" "RestrictPVPTime" "PVPEnabled" "PVPTime"
+  reset_weekly_schedule "$settings_ini" "RestrictPVPBuildingDamageTime" "PVPBuildingDamageEnabled" "PVPBuildingDamageTime"
+  ini_set "$settings_ini" "ServerSettings" "CanDamagePlayerOwnedStructures" "False"
 fi
 apply_avatar_schedule "$settings_ini"
 apply_server_setting_overrides "$settings_ini" "$SERVER_SETTINGS_KEYS_FILE"

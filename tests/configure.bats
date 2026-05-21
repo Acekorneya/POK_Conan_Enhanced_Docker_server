@@ -117,3 +117,32 @@ setup() {
   [[ "$output" != *"admin"* ]]
   [[ "$output" != *"rcon"* ]]
 }
+
+@test "configure-server resets PvP and Raid schedules when PVP_ENABLED is false" {
+  export PVP_ENABLED=false
+  export PVP_TIME_DAYS=weekends
+  export PVP_TIME_START=18:00
+  export PVP_TIME_END=22:00
+  export PVP_BUILDING_DAMAGE_DAYS=weekends
+  export PVP_BUILDING_DAMAGE_START=18:00
+  export PVP_BUILDING_DAMAGE_END=22:00
+  
+  run scripts/configure-server.sh
+  [ "$status" -eq 0 ]
+  cfg="$SERVER_DIR/ConanSandbox/Saved/Config/LinuxServer/ServerSettings.ini"
+  
+  grep -q '^PVPEnabled=False$' "$cfg"
+  grep -q '^RestrictPVPTime=False$' "$cfg"
+  grep -q '^RestrictPVPBuildingDamageTime=False$' "$cfg"
+  grep -q '^CanDamagePlayerOwnedStructures=False$' "$cfg"
+  
+  # Ensure times are reset to 0
+  grep -q '^PVPTimeSaturdayStart=0$' "$cfg"
+  grep -q '^PVPTimeSaturdayEnd=0$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSaturdayStart=0$' "$cfg"
+  grep -q '^PVPBuildingDamageTimeSaturdayEnd=0$' "$cfg"
+  
+  # Ensure enabled days are False
+  grep -q '^PVPEnabledSaturday=False$' "$cfg"
+  grep -q '^PVPBuildingDamageEnabledSaturday=False$' "$cfg"
+}
